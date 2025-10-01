@@ -1,0 +1,434 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  email             String    @unique
+  name              String?
+  password          String?
+  emailVerified     DateTime?
+  image             String?
+  role              UserRole  @default(USER)
+  stripeCustomerId  String?   @unique
+  
+  // Relations (as references)
+  instanceIds       String[]  @db.ObjectId
+  
+  // NextAuth relations
+  accounts          Account[]
+  sessions          Session[]
+  
+  // Embedded subscription data for faster queries
+  subscription      Subscription?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@map("users")
+}
+
+// NextAuth required models
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Your existing models remain unchanged
+model Instance {
+  id                String          @id @default(auto()) @map("_id") @db.ObjectId
+  name              String
+  userId            String          @db.ObjectId
+  status            InstanceStatus  @default(PROVISIONING)
+  
+  // Configuration
+  config            InstanceConfig
+  
+  // AWS Resources
+  awsResources      AWSResources?
+  
+  // Access
+  access            AccessDetails?
+  
+  // Terraform
+  terraformState    Json?
+  terraformOutputs  Json?
+  
+  // Monitoring
+  monitoring        MonitoringConfig
+  
+  // Billing
+  billing           BillingInfo
+  
+  // Latest metrics (embedded for performance)
+  latestMetrics     Metrics?
+  
+  // Statistics
+  stats             InstanceStats?
+  
+  // Timestamps
+  startedAt         DateTime?
+  stoppedAt         DateTime?
+  lastDeployment    DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  deletedAt         DateTime?
+  
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("instances")
+}
+
+model Deployment {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  instanceId      String           @db.ObjectId
+  status          DeploymentStatus @default(PENDING)
+  type            DeploymentType
+  
+  details         DeploymentDetails
+  
+  terraformPlan   Json?
+  terraformOutput Json?
+  errorMessage    String?
+  logs            String[]         @default([])
+  
+  startedAt       DateTime         @default(now())
+  completedAt     DateTime?
+  
+  @@index([instanceId])
+  @@map("deployments")
+}
+
+model Backup {
+  id              String       @id @default(auto()) @map("_id") @db.ObjectId
+  instanceId      String       @db.ObjectId
+  status          BackupStatus @default(PENDING)
+  type            BackupType   @default(MANUAL)
+  
+  // Storage
+  storage         BackupStorage?
+  
+  // Metadata
+  instanceVersion String
+  metadata        Json?
+  errorMessage    String?
+  
+  createdAt       DateTime     @default(now())
+  completedAt     DateTime?
+  expiresAt       DateTime?
+  
+  @@index([instanceId])
+  @@index([createdAt])
+  @@map("backups")
+}
+
+model Metric {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  instanceId      String    @db.ObjectId
+  
+  // All metrics as embedded document
+  resources       ResourceMetrics
+  n8nMetrics      N8nMetrics?
+  
+  timestamp       DateTime  @default(now())
+  
+  @@index([instanceId, timestamp(sort: Desc)])
+  @@map("metrics")
+}
+
+model InstanceLog {
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  instanceId  String      @db.ObjectId
+  level       LogLevel
+  source      String      
+  message     String      
+  metadata    Json?
+  stackTrace  String?
+  
+  timestamp   DateTime    @default(now())
+  
+  @@index([instanceId, timestamp(sort: Desc)])
+  @@index([level])
+  @@map("instance_logs")
+}
+
+model Payment {
+  id                    String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String         @db.ObjectId
+  stripePaymentIntentId String         @unique
+  amount                Float
+  currency              String         @default("usd")
+  status                PaymentStatus
+  description           String?
+  metadata              Json?
+  invoiceUrl            String?
+  
+  createdAt             DateTime       @default(now())
+  
+  @@index([userId])
+  @@map("payments")
+}
+
+model ActivityLog {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  instanceId  String?   @db.ObjectId
+  action      String
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([userId])
+  @@index([instanceId])
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
+
+// Embedded Documents (Types)
+
+type Subscription {
+  stripeSubscriptionId String
+  stripePriceId        String
+  status               SubscriptionStatus
+  plan                 PlanType
+  instanceLimit        Int              @default(1)
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  canceledAt           DateTime?
+}
+
+type InstanceConfig {
+  version           String          @default("latest")
+  size              InstanceSize    @default(SMALL)
+  region            String          @default("us-east-1")
+  customDomain      String?
+  environment       Json?           // Environment variables
+  resources         ResourceLimits?
+}
+
+type ResourceLimits {
+  cpu               String          // e.g., "0.5", "1", "2"
+  memory            String          // e.g., "1GB", "2GB", "4GB"
+  storage           String          // e.g., "20GB", "50GB", "100GB"
+}
+
+type AWSResources {
+  ecsTaskArn        String?
+  ecsCluster        String?
+  ecsService        String?
+  rdsInstanceId     String?
+  rdsEndpoint       String?
+  albDnsName        String?
+  albArn            String?
+  targetGroupArn    String?
+  vpcId             String?
+  subnetIds         String[]
+  securityGroupId   String?
+  s3BucketName      String?
+}
+
+type AccessDetails {
+  url               String?
+  adminUsername     String?         @default("admin@example.com")
+  adminPasswordHash String?
+  apiKey            String?
+  sshKeyName        String?
+  webhookUrl        String?
+}
+
+type MonitoringConfig {
+  metricsEnabled    Boolean         @default(true)
+  logsRetention     Int             @default(7)
+  alertsEnabled     Boolean         @default(false)
+  alertEndpoints    String[]        @default([])
+}
+
+type BillingInfo {
+  monthlyCharge     Float           @default(0)
+  hourlyRate        Float           @default(0)
+  totalUsageHours   Float           @default(0)
+  lastBilledAt      DateTime?
+  nextBillingDate   DateTime?
+}
+
+type Metrics {
+  resources         ResourceMetrics
+  n8nMetrics        N8nMetrics?
+  timestamp         DateTime
+}
+
+type ResourceMetrics {
+  cpuUtilization    Float?
+  memoryUsed        Float?
+  memoryAvailable   Float?
+  storageUsed       Float?
+  storageAvailable  Float?
+  networkIn         Float?
+  networkOut        Float?
+}
+
+type N8nMetrics {
+  workflowCount     Int?
+  executionCount    Int?
+  failedExecutions  Int?
+  activeUsers       Int?
+  averageExecutionTime Float?
+}
+
+type InstanceStats {
+  totalExecutions   Int             @default(0)
+  totalWorkflows    Int             @default(0)
+  totalUptime       Float           @default(0) // in hours
+  lastHealthCheck   DateTime?
+  healthStatus      String?         @default("unknown")
+}
+
+type DeploymentDetails {
+  fromVersion       String?
+  toVersion         String?
+  changeSet         String[]        @default([])
+  rollbackEnabled   Boolean         @default(false)
+}
+
+type BackupStorage {
+  s3Bucket          String?
+  s3Key             String?
+  sizeInBytes       Int?
+  checksum          String?
+}
+
+// ENUMS
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum InstanceStatus {
+  PROVISIONING
+  STARTING
+  RUNNING
+  STOPPING
+  STOPPED
+  FAILED
+  DESTROYING
+  UPDATING
+}
+
+enum InstanceSize {
+  SMALL
+  MEDIUM
+  LARGE
+  XLARGE
+}
+
+enum DeploymentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DeploymentType {
+  CREATE
+  UPDATE
+  RESTART
+  SCALE
+  DESTROY
+  BACKUP
+  RESTORE
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+enum BackupType {
+  MANUAL
+  AUTOMATED
+  BEFORE_UPDATE
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  UNPAID
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+}
