@@ -175,6 +175,10 @@ resource "aws_ecs_cluster" "n8n" {
   })
 }
 
+resource "postgresql_database" "customer_db" {
+  name = "n8n_${var.customer_id}"
+}
+
 resource "aws_ecs_task_definition" "n8n" {
   family                   = "task-${var.instance_id}"  # Add prefix
   network_mode             = "awsvpc"
@@ -211,7 +215,7 @@ resource "aws_ecs_task_definition" "n8n" {
         },
         {
           name  = "DB_POSTGRESDB_DATABASE"
-          value = "n8n"
+          value = "n8n_${var.customer_id}" 
         },
         {
           name  = "DB_POSTGRESDB_USER"
@@ -315,6 +319,23 @@ resource "aws_lb_listener" "n8n" {
     target_group_arn = aws_lb_target_group.n8n.arn
   }
 }
+
+resource "aws_lb_listener_rule" "customer_routing" {
+  listener_arn = aws_lb_listener.n8n.arn
+  priority     = var.customer_priority
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.customer.arn
+  }
+
+  condition {
+    host_header {
+      values = ["${var.customer_subdomain}.yourdomain.com"]
+    }
+  }
+}
+
 
 resource "aws_ecs_service" "n8n" {
   name            = "service-${var.instance_id}"  # Add prefix
