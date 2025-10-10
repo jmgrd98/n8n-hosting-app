@@ -12,7 +12,7 @@ import {
   AttributeValue
 } from '@aws-sdk/client-dynamodb';
 import { LocalStateConfig, RemoteStateConfig, S3StateConfig, S3StreamBody, StateManagerError } from '@/types/infrastructure';
-import { Readable } from 'stream';
+// import { Readable } from 'stream';
 
 // Minimal LockInfo shape used by this module
 interface LockInfo {
@@ -174,7 +174,7 @@ export class StateManager {
       //   return Buffer.concat(chunks);
       // }
       if (typeof stream === 'object' && stream !== null && 'transformToByteArray' in stream) {
-  const s = stream as S3StreamBody & { transformToByteArray: () => Promise<Uint8Array> };
+  // const s = stream as S3StreamBody & { transformToByteArray: () => Promise<Uint8Array> };
 
       }
       

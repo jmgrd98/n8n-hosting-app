@@ -1,7 +1,9 @@
+// app/api/instances/[id]/delete/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
-import { getInstanceById, deleteInstance } from '@/lib/database';
+import { getInstanceById, deleteInstance, updateInstanceStatus } from '@/lib/database';
+import { TerraformExecutor } from '@/lib/terraform/executor';
 
 export async function POST(
   request: NextRequest,
@@ -29,15 +31,18 @@ export async function POST(
       );
     }
     
-    // Delete the instance
+    // Mark instance as being destroyed (soft delete)
     await deleteInstance(id);
     
-    // TODO: Here you would trigger the actual AWS infrastructure deletion
-    // For now, we're just marking it as deleted in the database
+    // Trigger AWS infrastructure deletion in the background
+    // Don't await this - let it run asynchronously
+    destroyInfrastructure(id).catch(error => {
+      console.error(`Failed to destroy infrastructure for instance ${id}:`, error);
+    });
     
     return NextResponse.json({ 
       success: true,
-      message: 'Instance deleted successfully'
+      message: 'Instance deletion initiated. This may take several minutes.'
     });
   } catch (error) {
     console.error('Failed to delete instance:', error);
@@ -45,5 +50,31 @@ export async function POST(
       { error: 'Failed to delete instance' },
       { status: 500 }
     );
+  }
+}
+
+async function destroyInfrastructure(instanceId: string) {
+  try {
+    console.log(`Starting infrastructure destruction for instance ${instanceId}`);
+    
+    // Update status to DESTROYING
+    await updateInstanceStatus(instanceId, 'DESTROYING');
+    
+    // Execute Terraform destroy
+    const terraform = new TerraformExecutor(instanceId);
+    await terraform.destroy();
+    
+    console.log(`Successfully destroyed infrastructure for instance ${instanceId}`);
+    
+    // Update status to indicate complete deletion
+    await updateInstanceStatus(instanceId, 'DELETED');
+    
+  } catch (error) {
+    console.error(`Error destroying infrastructure for instance ${instanceId}:`, error);
+    
+    // Mark as failed
+    await updateInstanceStatus(instanceId, 'FAILED');
+    
+    throw error;
   }
 }
