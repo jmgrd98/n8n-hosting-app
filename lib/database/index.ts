@@ -12,13 +12,13 @@ import {
   DeploymentStatus,
   DeploymentType,
   BackupType,
-  BackupStatus,
+  // BackupStatus,
   ResourceMetrics,
   N8nMetrics,
   AWSResources,
   AccessDetails,
-  InstanceConfig,
-  Subscription,
+  // InstanceConfig,
+  // Subscription,
   Prisma
 } from '@prisma/client';
 import crypto from 'crypto';

@@ -35,24 +35,10 @@ const PRICING_PLANS = [
       'Advanced monitoring',
     ],
   },
-  // {
-  //   name: 'Enterprise',
-  //   price: null,
-  //   priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE,
-  //   features: [
-  //     'Unlimited instances',
-  //     'Custom resources',
-  //     'Unlimited storage',
-  //     'Unlimited executions',
-  //     '24/7 dedicated support',
-  //     'SLA guarantee',
-  //     'Custom integrations',
-  //   ],
-  // },
 ];
 
 export default function PricingPage() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
 

@@ -54,7 +54,7 @@ export class TerraformExecutor {
     
     // Generate Terraform files
     await this.generateVariablesTf();
-    await this.generateMainTf(config);
+    await this.generateMainTf();
     await this.generateTfVars(config);
     
     // Initialize Terraform
@@ -128,7 +128,7 @@ variable "tags" {
     await fs.writeFile(path.join(this.workspaceDir, 'variables.tf'), variablesTf);
   }
   
-  private async generateMainTf(config: TerraformVariables): Promise<void> {
+  private async generateMainTf(): Promise<void> {
     const accessKey = process.env.AWS_ACCESS_KEY_ID;
     const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
     
@@ -270,8 +270,48 @@ tags = {
   }
   
   async destroy(): Promise<void> {
-    await this.runCommand('terraform destroy -auto-approve');
-    await fs.rm(this.workspaceDir, { recursive: true, force: true });
+    try {
+      // Check if workspace directory exists
+      const workspaceExists = await fs.access(this.workspaceDir)
+        .then(() => true)
+        .catch(() => false);
+      
+      if (!workspaceExists) {
+        console.log(`Workspace ${this.workspaceDir} does not exist, skipping Terraform destroy`);
+        return;
+      }
+      
+      // Check if terraform state exists
+      const stateFile = path.join(this.workspaceDir, 'terraform.tfstate');
+      const stateExists = await fs.access(stateFile)
+        .then(() => true)
+        .catch(() => false);
+      
+      if (!stateExists) {
+        console.log(`No Terraform state found for ${this.instanceId}, cleaning up workspace only`);
+        await fs.rm(this.workspaceDir, { recursive: true, force: true });
+        return;
+      }
+      
+      // Execute terraform destroy
+      console.log(`Destroying Terraform resources for ${this.instanceId}`);
+      await this.runCommand('terraform destroy -auto-approve');
+      
+      // Clean up workspace
+      await fs.rm(this.workspaceDir, { recursive: true, force: true });
+      
+    } catch (error) {
+      console.error(`Error in destroy for ${this.instanceId}:`, error);
+      
+      // Try to clean up workspace anyway
+      try {
+        await fs.rm(this.workspaceDir, { recursive: true, force: true });
+      } catch (cleanupError) {
+        console.error('Failed to clean up workspace:', cleanupError);
+      }
+      
+      throw error;
+    }
   }
   
   async getOutputs(): Promise<TerraformOutputs> {

@@ -2,7 +2,7 @@ import { Worker, Job } from 'bullmq';
 import { connection } from '../client';
 import { TerraformExecutor } from '@/lib/terraform/executor';
 import { updateInstanceStatus, prisma } from '@/lib/database';
-import { Instance, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { TerraformJobData, TerraformVariables } from '@/types/infrastructure';
 // Import TerraformJobData, TerraformOutputs from types above
 
@@ -29,7 +29,7 @@ export const terraformWorker = new Worker<TerraformJobData>(
           break;
           
         case 'update':
-          await handleUpdate(executor, instanceId, variables);
+          await handleUpdate(instanceId);
           break;
           
         case 'restart':
@@ -37,7 +37,7 @@ export const terraformWorker = new Worker<TerraformJobData>(
           break;
           
         case 'scale':
-          await handleScale(executor, instanceId, variables);
+          await handleScale(instanceId);
           break;
           
         default:
@@ -170,9 +170,9 @@ async function handleDestroy(
 }
 
 async function handleUpdate(
-  executor: TerraformExecutor,
+  // executor: TerraformExecutor,
   instanceId: string,
-  variables: Partial<TerraformVariables>
+  // variables: Partial<TerraformVariables>
 ): Promise<void> {
   await updateInstanceStatus(instanceId, 'UPDATING');
   // Implement update logic
@@ -189,9 +189,9 @@ async function handleRestart(
 }
 
 async function handleScale(
-  executor: TerraformExecutor,
+  // executor: TerraformExecutor,
   instanceId: string,
-  variables: Partial<TerraformVariables>
+  // variables: Partial<TerraformVariables>
 ): Promise<void> {
   await updateInstanceStatus(instanceId, 'UPDATING');
   // Implement scale logic
