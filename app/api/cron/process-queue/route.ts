@@ -1,11 +1,11 @@
 // app/api/cron/process-queue/route.ts
 import { NextResponse } from 'next/server';
-import { Queue } from 'bullmq';
+import { Queue, Job } from 'bullmq';
 import { connection } from '@/lib/queue/client';
 import { TerraformExecutor } from '@/lib/terraform/executor';
 import { updateInstanceStatus, prisma } from '@/lib/database';
 import { Prisma } from '@prisma/client';
-import { TerraformJobData } from '@/types/infrastructure';
+import { TerraformJobData, TerraformVariables } from '@/types/infrastructure';
 
 // Verify cron secret
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
   }
 }
 
-async function processJob(job: any) {
+async function processJob(job: Job<TerraformJobData>): Promise<void> {
   const { action, instanceId, variables } = job.data;
   const executor = new TerraformExecutor(instanceId);
   
@@ -70,15 +70,26 @@ async function processJob(job: any) {
       case 'destroy':
         await handleDestroy(executor, instanceId);
         break;
+      case 'update':
+        await handleUpdate(instanceId);
+        break;
+      case 'restart':
+        await handleRestart(executor, instanceId);
+        break;
+      case 'scale':
+        await handleScale(instanceId);
+        break;
       default:
-        throw new Error(`Unknown action: ${action}`);
+        // TypeScript ensures this is never reached
+        const exhaustiveCheck: never = action;
+        throw new Error(`Unknown action: ${exhaustiveCheck}`);
     }
     
-    await job.moveToCompleted('done', true);
+    await job.moveToCompleted('done', 'true');
     console.log(`Job ${job.id} completed`);
   } catch (error) {
     console.error(`Job ${job.id} failed:`, error);
-    await job.moveToFailed(error as Error, true);
+    await job.moveToFailed(error as Error, 'true');
     await updateInstanceStatus(instanceId, 'FAILED');
     throw error;
   }
@@ -87,8 +98,8 @@ async function processJob(job: any) {
 async function handleCreate(
   executor: TerraformExecutor,
   instanceId: string,
-  variables: any
-) {
+  variables: Partial<TerraformVariables>
+): Promise<void> {
   const instance = await prisma.instance.findUnique({
     where: { id: instanceId },
   });
@@ -97,7 +108,7 @@ async function handleCreate(
     throw new Error(`Instance ${instanceId} not found`);
   }
   
-  const fullVariables = {
+  const fullVariables: TerraformVariables = {
     instanceId,
     name: instance.name,
     size: instance.config.size,
@@ -159,7 +170,7 @@ async function handleCreate(
 async function handleDestroy(
   executor: TerraformExecutor,
   instanceId: string
-) {
+): Promise<void> {
   await updateInstanceStatus(instanceId, 'DESTROYING');
   await executor.destroy();
   
@@ -170,4 +181,25 @@ async function handleDestroy(
       deletedAt: new Date(),
     },
   });
+}
+
+async function handleUpdate(instanceId: string): Promise<void> {
+  await updateInstanceStatus(instanceId, 'UPDATING');
+  // Implement update logic
+  console.log('Update not yet implemented for instance:', instanceId);
+}
+
+async function handleRestart(
+  executor: TerraformExecutor,
+  instanceId: string
+): Promise<void> {
+  await updateInstanceStatus(instanceId, 'STOPPING');
+  // Implement restart logic
+  console.log('Restart not yet implemented for instance:', instanceId);
+}
+
+async function handleScale(instanceId: string): Promise<void> {
+  await updateInstanceStatus(instanceId, 'UPDATING');
+  // Implement scale logic
+  console.log('Scale not yet implemented for instance:', instanceId);
 }
