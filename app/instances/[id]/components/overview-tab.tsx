@@ -19,13 +19,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import Link from 'next/link';
+import type { Instance } from '@/types/n8n';
 
 interface OverviewTabProps {
   instanceId: string;
-  instance: any;
+  instance: Instance;
   copiedField: string | null;
-  onCopy: (text: string, field: string) => void;
-  getHealthColor: (health?: string) => string;
+  onCopy: (text: string, field: string | null | undefined) => void;
+  getHealthColor: (health?: string | null) => string;
 }
 
 export function OverviewTab({ 
@@ -266,7 +267,7 @@ export function OverviewTab({
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => onCopy(instance.access.url, 'url')}
+                  onClick={() => onCopy(instance.access!.url!, 'url')}
                 >
                   {copiedField === 'url' ? (
                     <Check className="w-4 h-4 text-green-600" />
@@ -295,7 +296,7 @@ export function OverviewTab({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onCopy(instance.access.adminUsername, 'username')}
+                onClick={() => onCopy(instance.access!.adminUsername!, 'username')}
               >
                 {copiedField === 'username' ? (
                   <Check className="w-4 h-4 text-green-600" />
@@ -320,7 +321,7 @@ export function OverviewTab({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onCopy(instance.access.apiKey, 'apiKey')}
+                onClick={() => onCopy(instance.access!.apiKey!, 'apiKey')}
               >
                 {copiedField === 'apiKey' ? (
                   <Check className="w-4 h-4 text-green-600" />

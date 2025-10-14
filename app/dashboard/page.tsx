@@ -28,24 +28,7 @@ import {
 } from 'lucide-react';
 import { CreateInstanceDialog } from '@/components/create-instance-dialog';
 import { InstanceCard } from '@/components/instance-card';
-
-interface Instance {
-  id: string;
-  name: string;
-  status: 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'FAILED' | 'DESTROYING' | 'DELETED';
-  config: {
-    version: string;
-    size: string;
-    region: string;
-  };
-  access?: {
-    url?: string;
-  };
-  createdAt: string;
-  billing?: {
-    monthlyCharge: number;
-  };
-}
+import type { Instance } from '@/types/n8n';
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();

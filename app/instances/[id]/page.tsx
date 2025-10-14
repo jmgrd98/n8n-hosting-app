@@ -47,65 +47,8 @@ import { ApiKeysTab } from './components/api-keys-tab';
 import { LogsTab } from './components/logs-tab';
 import { SettingsTab } from './components/settings-tab';
 
-interface Instance {
-  id: string;
-  name: string;
-  status: 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'FAILED' | 'DESTROYING' | 'UPDATING';
-  config: {
-    version: string;
-    size: string;
-    region: string;
-    environment?: Record<string, string>;
-    resources?: {
-      cpu: string;
-      memory: string;
-      storage: string;
-    };
-  };
-  access?: {
-    url?: string;
-    adminUsername?: string;
-    apiKey?: string;
-  };
-  awsResources?: {
-    ecsCluster?: string;
-    ecsService?: string;
-    rdsEndpoint?: string;
-    albDnsName?: string;
-    vpcId?: string;
-    securityGroupId?: string;
-  };
-  monitoring?: {
-    metricsEnabled: boolean;
-    logsRetention: number;
-    alertsEnabled: boolean;
-  };
-  billing?: {
-    monthlyCharge: number;
-    hourlyRate: number;
-    totalUsageHours: number;
-  };
-  stats?: {
-    totalExecutions: number;
-    totalWorkflows: number;
-    totalUptime: number;
-    healthStatus?: string;
-  };
-  latestMetrics?: {
-    resources?: {
-      cpuUtilization?: number;
-      memoryUsed?: number;
-      memoryAvailable?: number;
-      storageUsed?: number;
-      storageAvailable?: number;
-    };
-    timestamp?: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-  startedAt?: string;
-  stoppedAt?: string;
-}
+// Import the proper Instance type
+import type { Instance } from '@/types/n8n';
 
 export default function InstanceDetailsPage() {
   const params = useParams();
@@ -197,14 +140,15 @@ export default function InstanceDetailsPage() {
     }
   };
 
-  const copyToClipboard = async (text: string, field: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
+  const copyToClipboard = (text: string, field: string | null | undefined) => {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopiedField(field || null);
+        setTimeout(() => setCopiedField(null), 2000);
+      })
+      .catch(error => {
+        console.error('Failed to copy:', error);
+      });
   };
 
   const getStatusColor = (status: string) => {
@@ -219,7 +163,7 @@ export default function InstanceDetailsPage() {
     }
   };
 
-  const getHealthColor = (health?: string) => {
+  const getHealthColor = (health?: string | null) => {
     switch (health) {
       case 'healthy': return 'text-green-600';
       case 'degraded': return 'text-yellow-600';

@@ -6,9 +6,12 @@ import { prisma } from '@/lib/database';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Await params (Next.js 15+ requirement)
+    const { id } = await params;
+    
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,7 +29,7 @@ export async function GET(
     // Fetch instance and verify ownership
     const instance = await prisma.instance.findUnique({
       where: {
-        id: params.id,
+        id: id,
         userId: session.user.id,
       },
       select: {
@@ -61,7 +64,7 @@ export async function GET(
     const apiKey = await prisma.apiKey.findUnique({
       where: {
         id: apiKeyId,
-        instanceId: params.id,
+        instanceId: id,
       },
     });
 
