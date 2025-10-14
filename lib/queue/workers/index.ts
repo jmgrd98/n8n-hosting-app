@@ -4,7 +4,7 @@ import { redis } from '../client';
 
 export async function startWorkers() {
   console.log('🚀 Starting queue workers...');
-  console.log('📍 Environment:', process.env.NODE_ENV);
+  console.log('📍 Environment:', process.env.NODE_ENV || 'development');
   console.log('📍 Redis: Upstash (serverless)');
   
   // Test Redis connection with retry
@@ -40,11 +40,16 @@ export async function startWorkers() {
   
   // Worker event handlers
   terraformWorker.on('completed', (job) => {
-    console.log(`✅ Job ${job.id} completed successfully`);
+    console.log(`✅ Job ${job.id} completed successfully - Instance: ${job.data.instanceId}`);
   });
   
   terraformWorker.on('failed', (job, err) => {
-    console.error(`❌ Job ${job?.id} failed:`, err.message);
+    // Don't log stalled jobs as errors - they'll be retried
+    if (err.message.includes('stalled')) {
+      console.warn(`⚠️  Job ${job?.id} stalled, will retry automatically`);
+    } else {
+      console.error(`❌ Job ${job?.id} failed:`, err.message);
+    }
   });
   
   terraformWorker.on('active', (job) => {
@@ -52,23 +57,32 @@ export async function startWorkers() {
   });
   
   terraformWorker.on('error', (err) => {
-    // Suppress Upstash compatibility errors
-    if (err.message.includes('CLIENT SETINFO') || 
-        err.message.includes('Command timed out')) {
+    // Suppress these expected errors with Upstash
+    const suppressedErrors = [
+      'CLIENT SETINFO',
+      'Command timed out',
+      'EPIPE',
+      'ECONNRESET'
+    ];
+    
+    if (suppressedErrors.some(e => err.message.includes(e))) {
+      // These are normal with Upstash, don't spam logs
       return;
     }
-    // Don't log EPIPE/ECONNRESET as errors - they auto-reconnect
-    if (!err.message.includes('EPIPE') && !err.message.includes('ECONNRESET')) {
-      console.error('❌ Worker error:', err.message);
-    }
+    
+    console.error('❌ Worker error:', err.message);
   });
   
   terraformWorker.on('stalled', (jobId) => {
-    console.warn(`⚠️  Job ${jobId} stalled, will retry`);
+    console.warn(`⚠️  Job ${jobId} detected as stalled, recovering...`);
   });
   
   console.log('✅ Worker started successfully');
   console.log('🎯 Listening for jobs on queue: terraform-jobs');
+  console.log('📊 Worker settings:');
+  console.log('   - Concurrency: 2 jobs');
+  console.log('   - Lock duration: 10 minutes');
+  console.log('   - Stalled check: every 2 minutes');
   console.log('⏳ Waiting for instance creation requests...');
   
   // Graceful shutdown
@@ -94,23 +108,36 @@ export async function startWorkers() {
   // Handle errors without crashing
   process.on('uncaughtException', (error) => {
     // Ignore Upstash compatibility errors
-    if (error.message.includes('EPIPE') || 
-        error.message.includes('ECONNRESET') ||
-        error.message.includes('CLIENT SETINFO') ||
-        error.message.includes('Command timed out')) {
+    const ignoredErrors = [
+      'EPIPE',
+      'ECONNRESET',
+      'CLIENT SETINFO',
+      'Command timed out'
+    ];
+    
+    if (ignoredErrors.some(e => error.message.includes(e))) {
       return;
     }
+    
     console.error('💥 Uncaught Exception:', error);
     shutdown('UNCAUGHT_EXCEPTION');
   });
   
   process.on('unhandledRejection', (reason: any, promise) => {
     // Ignore Upstash compatibility errors
-    if (reason && reason.message && 
-        (reason.message.includes('CLIENT SETINFO') || 
-         reason.message.includes('Command timed out'))) {
-      return;
+    if (reason && reason.message) {
+      const ignoredErrors = [
+        'CLIENT SETINFO',
+        'Command timed out',
+        'EPIPE',
+        'ECONNRESET'
+      ];
+      
+      if (ignoredErrors.some(e => reason.message.includes(e))) {
+        return;
+      }
     }
+    
     console.error('💥 Unhandled Rejection at:', promise);
     console.error('Reason:', reason);
   });

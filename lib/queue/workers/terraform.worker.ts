@@ -54,7 +54,22 @@ export const terraformWorker = new Worker<TerraformJobData>(
   {
     connection,
     concurrency: 2,
-    // Add these for better stability
+    
+    // CRITICAL: Upstash-specific settings to prevent stalling
+    // Upstash has higher latency than regular Redis
+    lockDuration: 600000, // 10 minutes - long enough for Terraform operations
+    lockRenewTime: 60000, // Renew lock every 60 seconds
+    stalledInterval: 120000, // Check for stalled jobs every 2 minutes (increased from default 30s)
+    maxStalledCount: 3, // Allow more stalled retries
+    
+    // Settings for better Upstash compatibility
+    settings: {
+      // Increase the time before a job is considered stalled
+      lockDuration: 600000,
+      stalledInterval: 120000,
+    },
+    
+    // Job completion settings
     removeOnComplete: {
       count: 100,
       age: 24 * 3600, // 24 hours
@@ -109,7 +124,7 @@ async function handleCreate(
   const outputs = await Promise.race([
     executor.apply(),
     new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Terraform apply timeout')), 600000)
+      setTimeout(() => reject(new Error('Terraform apply timeout')), 900000) // 15 min timeout
     )
   ]);
   
