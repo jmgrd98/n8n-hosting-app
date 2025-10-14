@@ -18,15 +18,17 @@ export async function startWorkers() {
       await redis.ping();
       console.log('✅ Redis connection verified with PING');
       connected = true;
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
       // Ignore CLIENT SETINFO errors - these are expected with Upstash
-      if (error.message && error.message.includes('CLIENT SETINFO')) {
+      if (errorMessage.includes('CLIENT SETINFO')) {
         console.log('✅ Redis connected (Upstash compatibility mode)');
         connected = true;
         break;
       }
       
-      console.error(`❌ Redis connection attempt ${attempts}/${maxAttempts} failed:`, error.message);
+      console.error(`❌ Redis connection attempt ${attempts}/${maxAttempts} failed:`, errorMessage);
       if (attempts < maxAttempts) {
         const delay = attempts * 2000;
         console.log(`⏳ Waiting ${delay}ms before retry...`);
@@ -93,9 +95,10 @@ export async function startWorkers() {
       await redis.quit();
       console.log('👋 Worker closed cleanly');
       process.exit(0);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       // Ignore shutdown errors
-      if (!error.message.includes('Connection is closed')) {
+      if (!errorMessage.includes('Connection is closed')) {
         console.error('Error during shutdown:', error);
       }
       process.exit(1);
@@ -106,7 +109,7 @@ export async function startWorkers() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   
   // Handle errors without crashing
-  process.on('uncaughtException', (error) => {
+  process.on('uncaughtException', (error: Error) => {
     // Ignore Upstash compatibility errors
     const ignoredErrors = [
       'EPIPE',
@@ -123,9 +126,9 @@ export async function startWorkers() {
     shutdown('UNCAUGHT_EXCEPTION');
   });
   
-  process.on('unhandledRejection', (reason: any, promise) => {
+  process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
     // Ignore Upstash compatibility errors
-    if (reason && reason.message) {
+    if (reason instanceof Error) {
       const ignoredErrors = [
         'CLIENT SETINFO',
         'Command timed out',

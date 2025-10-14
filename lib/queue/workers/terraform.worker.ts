@@ -65,8 +65,8 @@ export const terraformWorker = new Worker<TerraformJobData>(
     // Settings for better Upstash compatibility
     settings: {
       // Increase the time before a job is considered stalled
-      lockDuration: 600000,
-      stalledInterval: 120000,
+      // lockDuration: 600000,
+      // stalledInterval: 120000,
     },
     
     // Job completion settings
