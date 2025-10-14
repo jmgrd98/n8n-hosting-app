@@ -1,10 +1,10 @@
+// lib/queue/workers/terraform.worker.ts
 import { Worker, Job } from 'bullmq';
 import { connection } from '../client';
 import { TerraformExecutor } from '@/lib/terraform/executor';
 import { updateInstanceStatus, prisma } from '@/lib/database';
 import { Prisma } from '@prisma/client';
 import { TerraformJobData, TerraformVariables } from '@/types/infrastructure';
-// Import TerraformJobData, TerraformOutputs from types above
 
 export const terraformWorker = new Worker<TerraformJobData>(
   'terraform-jobs',
@@ -12,7 +12,8 @@ export const terraformWorker = new Worker<TerraformJobData>(
     console.log('📋 Processing terraform job:', {
       id: job.id,
       name: job.name,
-      instanceId: job.data.instanceId
+      instanceId: job.data.instanceId,
+      action: job.data.action
     });
     
     const { action, instanceId, variables } = job.data;
@@ -41,12 +42,11 @@ export const terraformWorker = new Worker<TerraformJobData>(
           break;
           
         default:
-          // TypeScript ensures this is never reached
           const exhaustiveCheck: never = action;
           throw new Error(`Unknown action: ${exhaustiveCheck}`);
       }
     } catch (error) {
-      console.error(`Terraform job failed for ${instanceId}:`, error);
+      console.error(`❌ Terraform job failed for ${instanceId}:`, error);
       await updateInstanceStatus(instanceId, 'FAILED');
       throw error;
     }
@@ -54,6 +54,14 @@ export const terraformWorker = new Worker<TerraformJobData>(
   {
     connection,
     concurrency: 2,
+    // Add these for better stability
+    removeOnComplete: {
+      count: 100,
+      age: 24 * 3600, // 24 hours
+    },
+    removeOnFail: {
+      count: 50,
+    },
   }
 );
 
@@ -92,7 +100,7 @@ async function handleCreate(
   await job.updateProgress(30);
   await updateInstanceStatus(instanceId, 'PROVISIONING');
   await executor.plan();
-  console.log('Plan created successfully');
+  console.log('✅ Plan created successfully');
   
   console.log('🔨 Applying infrastructure (this may take 5-10 minutes)...');
   await job.updateProgress(50);
@@ -157,6 +165,7 @@ async function handleDestroy(
   executor: TerraformExecutor,
   instanceId: string
 ): Promise<void> {
+  console.log(`🗑️  Destroying instance ${instanceId}`);
   await updateInstanceStatus(instanceId, 'DESTROYING');
   await executor.destroy();
   
@@ -167,16 +176,12 @@ async function handleDestroy(
       deletedAt: new Date(),
     },
   });
+  console.log(`✅ Instance ${instanceId} destroyed`);
 }
 
-async function handleUpdate(
-  // executor: TerraformExecutor,
-  instanceId: string,
-  // variables: Partial<TerraformVariables>
-): Promise<void> {
+async function handleUpdate(instanceId: string): Promise<void> {
   await updateInstanceStatus(instanceId, 'UPDATING');
-  // Implement update logic
-  console.log('Update not yet implemented');
+  console.log('⚠️  Update not yet implemented for instance:', instanceId);
 }
 
 async function handleRestart(
@@ -184,16 +189,10 @@ async function handleRestart(
   instanceId: string
 ): Promise<void> {
   await updateInstanceStatus(instanceId, 'STOPPING');
-  // Implement restart logic
-  console.log('Restart not yet implemented');
+  console.log('⚠️  Restart not yet implemented for instance:', instanceId);
 }
 
-async function handleScale(
-  // executor: TerraformExecutor,
-  instanceId: string,
-  // variables: Partial<TerraformVariables>
-): Promise<void> {
+async function handleScale(instanceId: string): Promise<void> {
   await updateInstanceStatus(instanceId, 'UPDATING');
-  // Implement scale logic
-  console.log('Scale not yet implemented');
+  console.log('⚠️  Scale not yet implemented for instance:', instanceId);
 }
