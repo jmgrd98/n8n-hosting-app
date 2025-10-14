@@ -1,4 +1,4 @@
-// app/(dashboard)/dashboard/instances/[id]/workflows/page.tsx
+// app/)/instances/[id]/workflows/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -300,7 +300,7 @@ export default function AIWorkflowGeneratorPage() {
         <div className="mb-8">
           <Button
             variant="ghost"
-            onClick={() => router.push(`/dashboard/instances/${instanceId}`)}
+            onClick={() => router.push(`/instances/${instanceId}`)}
             className="mb-4"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -326,7 +326,7 @@ export default function AIWorkflowGeneratorPage() {
               <Button
                 variant="link"
                 className="p-0 h-auto"
-                onClick={() => router.push(`/dashboard/instances/${instanceId}?tab=api-keys`)}
+                onClick={() => router.push(`/instances/${instanceId}?tab=api-keys`)}
               >
                 Add API Key
               </Button>

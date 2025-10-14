@@ -1,4 +1,3 @@
-// app/(dashboard)/dashboard/instances/[id]/components/overview-tab.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -231,7 +230,7 @@ export function OverviewTab({
               asChild
               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
             >
-              <Link href={`/dashboard/instances/${instanceId}/workflows`}>
+              <Link href={`/instances/${instanceId}/workflows`}>
                 <Sparkles className="w-4 h-4 mr-2" />
                 Try AI Generator
               </Link>
