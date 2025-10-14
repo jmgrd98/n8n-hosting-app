@@ -1,7 +1,18 @@
 // app/api/admin/clear-queue/route.ts
 import { NextResponse } from 'next/server';
-import { Queue } from 'bullmq';
+import { Queue, Job } from 'bullmq';
 import { connection } from '@/lib/queue/client';
+import { TerraformJobData } from '@/types/infrastructure';
+
+interface ObliterateRequest {
+  obliterate?: boolean;
+}
+
+interface JobSummary {
+  id: string | undefined;
+  data: TerraformJobData;
+  failedReason?: string;
+}
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +20,7 @@ export async function POST(request: Request) {
     // const session = await getServerSession();
     // if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const queue = new Queue('terraform-jobs', { connection });
+    const queue = new Queue<TerraformJobData>('terraform-jobs', { connection });
     
     // Get all job counts before cleanup
     const beforeCounts = await queue.getJobCounts();
@@ -23,9 +34,14 @@ export async function POST(request: Request) {
     await queue.drain();
     
     // Get obliterate option if requested
-    const { obliterate } = await request.json().catch(() => ({}));
+    let requestBody: ObliterateRequest = {};
+    try {
+      requestBody = await request.json();
+    } catch {
+      // Request body is optional
+    }
     
-    if (obliterate) {
+    if (requestBody.obliterate) {
       // Nuclear option: completely obliterate the queue
       await queue.obliterate({ force: true });
       console.log('Queue obliterated');
@@ -43,10 +59,11 @@ export async function POST(request: Request) {
       before: beforeCounts,
       after: afterCounts,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error cleaning queue:', error);
     return NextResponse.json(
-      { error: 'Failed to clean queue', details: error.message },
+      { error: 'Failed to clean queue', details: errorMessage },
       { status: 500 }
     );
   }
@@ -54,7 +71,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const queue = new Queue('terraform-jobs', { connection });
+    const queue = new Queue<TerraformJobData>('terraform-jobs', { connection });
     
     const counts = await queue.getJobCounts();
     const waiting = await queue.getWaiting(0, 10);
@@ -62,15 +79,22 @@ export async function GET() {
     
     await queue.close();
     
+    const formatJob = (job: Job<TerraformJobData>): JobSummary => ({
+      id: job.id,
+      data: job.data,
+      failedReason: job.failedReason,
+    });
+    
     return NextResponse.json({
       counts,
-      waiting: waiting.map(j => ({ id: j.id, data: j.data, failedReason: j.failedReason })),
-      failed: failed.map(j => ({ id: j.id, data: j.data, failedReason: j.failedReason })),
+      waiting: waiting.map(formatJob),
+      failed: failed.map(formatJob),
     });
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error inspecting queue:', error);
     return NextResponse.json(
-      { error: 'Failed to inspect queue', details: error.message },
+      { error: 'Failed to inspect queue', details: errorMessage },
       { status: 500 }
     );
   }
