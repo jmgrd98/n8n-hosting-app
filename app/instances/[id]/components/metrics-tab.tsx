@@ -1,23 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Instance } from '@/types/n8n';
 import { Activity } from 'lucide-react';
 
-interface MetricsInstance {
-  status: string;
-  latestMetrics?: {
-    resources?: {
-      cpuUtilization?: number;
-      memoryUsed?: number;
-      memoryAvailable?: number;
-      storageUsed?: number;
-      storageAvailable?: number;
-    };
-    timestamp?: string;
-  };
-}
 
 interface MetricsTabProps {
-  instance: MetricsInstance;
+  instance: Instance;
 }
 
 export function MetricsTab({ instance }: MetricsTabProps) {

@@ -6,10 +6,8 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-// import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,40 +19,16 @@ import {
 import { 
   Plus, 
   Server, 
-  // Activity, 
   Settings, 
-  Play, 
-  Pause, 
-  Trash2, 
-  ExternalLink, 
-  AlertCircle,
-  MoreVertical,
   RefreshCw,
-  Clock,
-  DollarSign,
   User,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  AlertCircle
 } from 'lucide-react';
 import { CreateInstanceDialog } from '@/components/create-instance-dialog';
-
-interface Instance {
-  id: string;
-  name: string;
-  status: 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'FAILED' | 'DESTROYING';
-  config: {
-    version: string;
-    size: string;
-    region: string;
-  };
-  access?: {
-    url?: string;
-  };
-  createdAt: string;
-  billing?: {
-    monthlyCharge: number;
-  };
-}
+import { InstanceCard } from '@/components/instance-card';
+import type { Instance } from '@/types/n8n';
 
 export default function DashboardPage() {
   const { data: session, status: sessionStatus } = useSession();
@@ -81,7 +55,11 @@ export default function DashboardPage() {
       
       const data = await response.json();
       console.log('Fetched instances:', data);
-      setInstances(data.instances || []);
+      // Filter out deleted instances
+      const activeInstances = (data.instances || []).filter(
+        (instance: Instance) => instance.status !== 'DELETED'
+      );
+      setInstances(activeInstances);
     } catch (error) {
       console.error('Error fetching instances:', error);
       setError('Failed to load instances. Please try again.');
@@ -131,27 +109,6 @@ export default function DashboardPage() {
       console.error(`Error ${action}ing instance:`, error);
       setError(`Failed to ${action} instance. Please try again.`);
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'RUNNING': return 'bg-green-500';
-      case 'STOPPED': return 'bg-gray-500';
-      case 'PROVISIONING': return 'bg-blue-500';
-      case 'FAILED': return 'bg-red-500';
-      case 'DESTROYING': return 'bg-orange-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const color = getStatusColor(status);
-    return (
-      <Badge variant="outline" className="capitalize">
-        <span className={`w-2 h-2 rounded-full ${color} mr-2`} />
-        {status.toLowerCase()}
-      </Badge>
-    );
   };
 
   if (sessionStatus === 'loading' || loading) {
@@ -330,80 +287,11 @@ export default function DashboardPage() {
           ) : (
             <div className="grid gap-4">
               {instances.map((instance) => (
-                <Card key={instance.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg">{instance.name}</CardTitle>
-                        <CardDescription className="mt-1">
-                          {instance.config.size} • {instance.config.region} • v{instance.config.version}
-                        </CardDescription>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {getStatusBadge(instance.status)}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {instance.status === 'RUNNING' && (
-                              <>
-                                <DropdownMenuItem onClick={() => handleInstanceAction(instance.id, 'stop')}>
-                                  <Pause className="w-4 h-4 mr-2" />
-                                  Stop Instance
-                                </DropdownMenuItem>
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/instances/${instance.id}`}>
-                                    <Settings className="w-4 h-4 mr-2" />
-                                    Settings
-                                  </Link>
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {instance.status === 'STOPPED' && (
-                              <DropdownMenuItem onClick={() => handleInstanceAction(instance.id, 'start')}>
-                                <Play className="w-4 h-4 mr-2" />
-                                Start Instance
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => handleInstanceAction(instance.id, 'delete')}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete Instance
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-6 text-sm text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          Created {new Date(instance.createdAt).toLocaleDateString()}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="w-4 h-4" />
-                          ${instance.billing?.monthlyCharge || 0}/month
-                        </div>
-                      </div>
-                      {instance.status === 'RUNNING' && instance.access?.url && (
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={instance.access.url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="w-4 h-4 mr-2" />
-                            Open n8n
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                <InstanceCard
+                  key={instance.id}
+                  instance={instance}
+                  onAction={handleInstanceAction}
+                />
               ))}
             </div>
           )}

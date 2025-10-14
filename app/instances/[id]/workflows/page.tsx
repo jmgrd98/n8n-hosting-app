@@ -469,32 +469,54 @@ export default function AIWorkflowGeneratorPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <h3 className="font-semibold text-lg mb-1">{generatedWorkflow.name}</h3>
-                    <p className="text-gray-600">{generatedWorkflow.description}</p>
-                  </div>
+        <h3 className="font-semibold text-lg mb-1">
+          {typeof generatedWorkflow.name === 'string' 
+            ? generatedWorkflow.name 
+            : 'Generated Workflow'}
+        </h3>
+        <p className="text-gray-600">
+          {typeof generatedWorkflow.description === 'string' 
+            ? generatedWorkflow.description 
+            : 'AI-generated workflow'}
+        </p>
+      </div>
 
-                  <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg">
-                    <h4 className="font-medium mb-3 flex items-center gap-2">
-                      <GitBranch className="w-4 h-4" />
-                      Workflow Structure
-                    </h4>
-                    <div className="space-y-2">
-                      {generatedWorkflow.nodes.map((node, index) => (
-                        <div key={index} className="flex items-center gap-2 text-sm">
-                          <Zap className="w-4 h-4 text-purple-600" />
-                          <span className="font-medium">{node.name}</span>
-                          <span className="text-gray-500">({node.type})</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+      {/* Only show structure if nodes is an array and has items */}
+      {Array.isArray(generatedWorkflow.nodes) && generatedWorkflow.nodes.length > 0 && (
+        <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg">
+          <h4 className="font-medium mb-3 flex items-center gap-2">
+            <GitBranch className="w-4 h-4" />
+            Workflow Structure ({generatedWorkflow.nodes.length} nodes)
+          </h4>
+          <div className="space-y-2">
+            {generatedWorkflow.nodes.map((node, index) => {
+              // Safely extract node properties
+              const nodeName = node?.name || node?.parameters?.name || `Node ${index + 1}`;
+              const nodeType = node?.type || 'Unknown';
+              const nodeId = node?.id || index;
+              
+              return (
+                <div key={nodeId} className="flex items-center gap-2 text-sm">
+                  <Zap className="w-4 h-4 text-purple-600" />
+                  <span className="font-medium">
+                    {String(nodeName)}
+                  </span>
+                  <span className="text-gray-500">
+                    ({String(nodeType)})
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-                  <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs overflow-x-auto">
-                    <pre>{JSON.stringify(generatedWorkflow, null, 2)}</pre>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+      <div className="bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-xs overflow-x-auto">
+        <pre>{JSON.stringify(generatedWorkflow, null, 2)}</pre>
+      </div>
+    </CardContent>
+  </Card>
+)}
 
             {/* Existing Workflows */}
             <Card id="workflows-list">

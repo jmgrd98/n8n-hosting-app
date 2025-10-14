@@ -23,7 +23,24 @@ import {
   DollarSign,
   Settings,
 } from 'lucide-react';
-import { Instance } from '@/types/n8n';
+
+interface Instance {
+  id: string;
+  name: string;
+  status: 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'FAILED' | 'DESTROYING';
+  config: {
+    version: string;
+    size: string;
+    region: string;
+  };
+  access?: {
+    url?: string;
+  };
+  createdAt: string;
+  billing?: {
+    monthlyCharge: number;
+  };
+}
 
 interface InstanceCardProps {
   instance: Instance;

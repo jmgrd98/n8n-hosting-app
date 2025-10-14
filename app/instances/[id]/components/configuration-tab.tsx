@@ -1,28 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Instance } from '@/types/n8n';
 import { Cpu, Server, HardDrive } from 'lucide-react';
 
-interface ConfigInstance {
-  config: {
-    size: string;
-    region: string;
-    version: string;
-    resources?: {
-      cpu: string;
-      memory: string;
-      storage: string;
-    };
-  };
-  awsResources?: {
-    vpcId?: string;
-    ecsCluster?: string;
-    rdsEndpoint?: string;
-  };
-  createdAt: string;
-}
 
 interface ConfigurationTabProps {
-  instance: ConfigInstance;
+  instance: Instance;
 }
 
 export function ConfigurationTab({ instance }: ConfigurationTabProps) {
