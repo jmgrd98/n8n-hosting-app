@@ -106,7 +106,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                   <>
                     <DropdownMenuItem onClick={(e) => {
                       e.stopPropagation();
-                      handleActionClick(e as any, 'stop');
+                      handleActionClick(e, 'stop');
                     }}>
                       <Pause className="w-4 h-4 mr-2" />
                       Stop Instance
@@ -122,7 +122,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                 {instance.status === 'STOPPED' && (
                   <DropdownMenuItem onClick={(e) => {
                     e.stopPropagation();
-                    handleActionClick(e as any, 'start');
+                    handleActionClick(e, 'start');
                   }}>
                     <Play className="w-4 h-4 mr-2" />
                     Start Instance
@@ -132,7 +132,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                 <DropdownMenuItem 
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleActionClick(e as any, 'delete');
+                    handleActionClick(e, 'delete');
                   }}
                   className="text-red-600"
                 >
