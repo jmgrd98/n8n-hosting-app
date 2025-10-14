@@ -41,7 +41,9 @@ export class TerraformExecutor {
   
   constructor(instanceId: string) {
     this.instanceId = instanceId;
-    this.workspaceDir = path.join(process.cwd(), 'terraform', 'workspaces', instanceId);
+    // Use /tmp in production (Vercel), local path in development
+    const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+    this.workspaceDir = path.join(baseDir, 'terraform', 'workspaces', instanceId);
   }
   
   async initWorkspace(config: TerraformVariables): Promise<void> {
@@ -131,77 +133,90 @@ variable "tags" {
   private async generateMainTf(): Promise<void> {
     const accessKey = process.env.AWS_ACCESS_KEY_ID;
     const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
+    const s3Bucket = process.env.TERRAFORM_STATE_BUCKET; // Add this env var
     
     if (!accessKey || !secretKey) {
       throw new Error('AWS credentials not configured');
     }
+
+    if (!s3Bucket) {
+      throw new Error('TERRAFORM_STATE_BUCKET not configured');
+    }
     
     const mainTf = `
-terraform {
-  required_version = ">= 1.0"
-  
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+  terraform {
+    required_version = ">= 1.0"
+    
+    required_providers {
+      aws = {
+        source  = "hashicorp/aws"
+        version = "~> 5.0"
+      }
+    }
+    
+    backend "s3" {
+      bucket = "${s3Bucket}"
+      key    = "instances/${this.instanceId}/terraform.tfstate"
+      region = "${process.env.AWS_REGION || 'us-east-1'}"
+      encrypt = true
     }
   }
-  
-  backend "local" {
-    path = "terraform.tfstate"
+
+  provider "aws" {
+    region = var.aws_region
+    access_key = "${accessKey}"
+    secret_key = "${secretKey}"
   }
-}
 
-provider "aws" {
-  region = var.aws_region
-  access_key = "${accessKey}"
-  secret_key = "${secretKey}"
-}
+  module "n8n_instance" {
+    source = "./modules/n8n-instance"
+    
+    instance_id    = var.instance_id
+    instance_name  = var.instance_name
+    instance_size  = var.instance_size
+    n8n_version    = var.n8n_version
+    aws_region     = var.aws_region
+    
+    vpc_cidr       = var.vpc_cidr
+    public_subnet_cidrs = var.public_subnet_cidrs
+    
+    db_instance_class = var.db_instance_class
+    db_storage_size   = var.db_storage_size
+    
+    ecs_cpu        = var.ecs_cpu
+    ecs_memory     = var.ecs_memory
+    
+    tags = var.tags
+  }
 
-module "n8n_instance" {
-  source = "./modules/n8n-instance"
-  
-  instance_id    = var.instance_id
-  instance_name  = var.instance_name
-  instance_size  = var.instance_size
-  n8n_version    = var.n8n_version
-  aws_region     = var.aws_region
-  
-  vpc_cidr       = var.vpc_cidr
-  public_subnet_cidrs = var.public_subnet_cidrs
-  
-  db_instance_class = var.db_instance_class
-  db_storage_size   = var.db_storage_size
-  
-  ecs_cpu        = var.ecs_cpu
-  ecs_memory     = var.ecs_memory
-  
-  tags = var.tags
-}
+  output "instance_url" {
+    value = module.n8n_instance.alb_dns_name
+    description = "The URL to access the n8n instance"
+  }
 
-output "instance_url" {
-  value = module.n8n_instance.alb_dns_name
-  description = "The URL to access the n8n instance"
-}
+  output "database_endpoint" {
+    value = module.n8n_instance.db_endpoint
+    description = "The database endpoint"
+  }
 
-output "database_endpoint" {
-  value = module.n8n_instance.db_endpoint
-  description = "The database endpoint"
-}
+  output "ecs_cluster_name" {
+    value = module.n8n_instance.ecs_cluster_name
+    description = "The ECS cluster name"
+  }
 
-output "ecs_cluster_name" {
-  value = module.n8n_instance.ecs_cluster_name
-  description = "The ECS cluster name"
-}
+  output "ecs_service_name" {
+    value = module.n8n_instance.ecs_service_name
+    description = "The ECS service name"
+  }
 
-output "ecs_service_name" {
-  value = module.n8n_instance.ecs_service_name
-  description = "The ECS service name"
-}
-`;
+  output "vpc_id" {
+    value = module.n8n_instance.vpc_id
+    description = "The VPC ID"
+  }
+  `;
     
     await fs.writeFile(path.join(this.workspaceDir, 'main.tf'), mainTf);
-  }
+}
   
   private async generateTfVars(config: TerraformVariables): Promise<void> {
     const sizeConfig = SIZE_CONFIGS[config.size] || SIZE_CONFIGS.SMALL;
