@@ -2,8 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
-import { getInstanceById, deleteInstance, updateInstanceStatus } from '@/lib/database';
-import { TerraformExecutor } from '@/lib/terraform/executor';
+import { getInstanceById, updateInstanceStatus } from '@/lib/database';
+import { provisioningQueue } from '@/lib/queue/index';
+import type { TerraformJobData } from '@/types/infrastructure';
 
 export async function POST(
   request: NextRequest,
@@ -31,50 +32,48 @@ export async function POST(
       );
     }
     
-    // Mark instance as being destroyed (soft delete)
-    await deleteInstance(id);
+    // Can only delete instances that are RUNNING, STOPPED, or FAILED
+    const deletableStatuses = ['RUNNING', 'STOPPED', 'FAILED'];
+    if (!deletableStatuses.includes(instance.status)) {
+      return NextResponse.json(
+        { error: `Cannot delete instance with status: ${instance.status}` },
+        { status: 400 }
+      );
+    }
     
-    // Trigger AWS infrastructure deletion in the background
-    // Don't await this - let it run asynchronously
-    destroyInfrastructure(id).catch(error => {
-      console.error(`Failed to destroy infrastructure for instance ${id}:`, error);
+    // Update status to DESTROYING immediately
+    await updateInstanceStatus(id, 'DESTROYING');
+    
+    // Queue the destroy job
+    const jobData: TerraformJobData = {
+      action: 'destroy',
+      instanceId: id,
+      variables: {},
+    };
+    
+    const job = await provisioningQueue.add('terraform-destroy', jobData, {
+      removeOnComplete: 100,
+      removeOnFail: 50,
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000,
+      },
     });
+    
+    console.log(`🗑️  Queued destroy job ${job.id} for instance ${id}`);
     
     return NextResponse.json({ 
       success: true,
-      message: 'Instance deletion initiated. This may take several minutes.'
+      message: 'Instance deletion initiated. This may take several minutes.',
+      jobId: job.id,
     });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Failed to delete instance:', error);
     return NextResponse.json(
-      { error: 'Failed to delete instance' },
+      { error: 'Failed to delete instance', details: errorMessage },
       { status: 500 }
     );
-  }
-}
-
-async function destroyInfrastructure(instanceId: string) {
-  try {
-    console.log(`Starting infrastructure destruction for instance ${instanceId}`);
-    
-    // Update status to DESTROYING
-    await updateInstanceStatus(instanceId, 'DESTROYING');
-    
-    // Execute Terraform destroy
-    const terraform = new TerraformExecutor(instanceId);
-    await terraform.destroy();
-    
-    console.log(`Successfully destroyed infrastructure for instance ${instanceId}`);
-    
-    // Update status to indicate complete deletion
-    await updateInstanceStatus(instanceId, 'DELETED');
-    
-  } catch (error) {
-    console.error(`Error destroying infrastructure for instance ${instanceId}:`, error);
-    
-    // Mark as failed
-    await updateInstanceStatus(instanceId, 'FAILED');
-    
-    throw error;
   }
 }
