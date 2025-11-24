@@ -2,7 +2,7 @@
 
 /aws
 
-/terraform/workspaces
+/.terraform/workspaces
 
 # dependencies
 /node_modules

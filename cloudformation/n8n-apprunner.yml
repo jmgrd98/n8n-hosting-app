@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'N8N Infrastructure with AWS App Runner and RDS PostgreSQL'
+
+Parameters:
+  InstanceId:
+    Type: String
+    Description: Unique identifier for the instance
+    AllowedPattern: '^[a-zA-Z0-9-]+$'
+    ConstraintDescription: Must contain only alphanumeric characters and hyphens
+
+  InstanceName:
+    Type: String
+    Description: Name of the n8n instance
+    Default: n8n-instance
+
+  N8NVersion:
+    Type: String
+    Description: Version of n8n to deploy
+    Default: latest
+
+  VpcCidr:
+    Type: String
+    Description: CIDR block for VPC
+    Default: 10.0.0.0/16
+
+  Subnet1Cidr:
+    Type: String
+    Description: CIDR block for first subnet
+    Default: 10.0.1.0/24
+
+  Subnet2Cidr:
+    Type: String
+    Description: CIDR block for second subnet
+    Default: 10.0.2.0/24
+
+  DBInstanceClass:
+    Type: String
+    Description: RDS instance class
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+
+  DBStorageSize:
+    Type: Number
+    Description: RDS storage size in GB
+    Default: 20
+    MinValue: 20
+    MaxValue: 1000
+
+  AppRunnerCpu:
+    Type: String
+    Description: CPU units for App Runner
+    Default: '1024'
+    AllowedValues:
+      - '256'
+      - '512'
+      - '1024'
+      - '2048'
+      - '4096'
+
+  AppRunnerMemory:
+    Type: String
+    Description: Memory for App Runner in MB
+    Default: '2048'
+    AllowedValues:
+      - '512'
+      - '1024'
+      - '2048'
+      - '3072'
+      - '4096'
+      - '6144'
+      - '8192'
+      - '10240'
+      - '12288'
+
+Resources:
+  # VPC Resources
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-subnet-1'
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-subnet-2'
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-rt'
+
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet1
+      RouteTableId: !Ref RouteTable
+
+  SubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet2
+      RouteTableId: !Ref RouteTable
+
+  # Security Groups
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-rds-sg'
+
+  # Database
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub 'db-subnet-${InstanceId}'
+      DBSubnetGroupDescription: Subnet group for n8n RDS
+      SubnetIds:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-db-subnet-group'
+
+  DBPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${InstanceId}/db-password'
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "n8nadmin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub 'db-${InstanceId}'
+      Engine: postgres
+      EngineVersion: '14'
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBStorageSize
+      StorageEncrypted: true
+      DBName: n8n
+      MasterUsername: n8nadmin
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DBPassword}:SecretString:password}}'
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: true
+      BackupRetentionPeriod: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-rds'
+
+  # VPC Connector for App Runner
+  VPCConnector:
+    Type: AWS::AppRunner::VpcConnector
+    Properties:
+      VpcConnectorName: !Sub 'vpc-connector-${InstanceId}'
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      SecurityGroups:
+        - !Ref RDSSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-vpc-connector'
+
+  # IAM Roles
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'apprunner-instance-${InstanceId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecretsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DBPassword
+
+  AppRunnerAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'apprunner-access-${InstanceId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  # Auto Scaling Configuration
+  AutoScalingConfig:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: !Sub 'autoscale-${InstanceId}'
+      MaxConcurrency: 100
+      MaxSize: 3
+      MinSize: 1
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-autoscale'
+
+  # App Runner Service
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    DependsOn: RDSInstance
+    Properties:
+      ServiceName: !Sub 'apprunner-${InstanceId}'
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerAccessRole.Arn
+        ImageRepository:
+          ImageIdentifier: !Sub 'public.ecr.aws/docker/library/n8nio/n8n:${N8NVersion}'
+          ImageRepositoryType: ECR_PUBLIC
+          ImageConfiguration:
+            Port: '5678'
+            RuntimeEnvironmentVariables:
+              - Name: DB_TYPE
+                Value: postgresdb
+              - Name: DB_POSTGRESDB_HOST
+                Value: !GetAtt RDSInstance.Endpoint.Address
+              - Name: DB_POSTGRESDB_PORT
+                Value: '5432'
+              - Name: DB_POSTGRESDB_DATABASE
+                Value: n8n
+              - Name: DB_POSTGRESDB_USER
+                Value: n8nadmin
+              - Name: DB_POSTGRESDB_PASSWORD
+                Value: !Sub '{{resolve:secretsmanager:${DBPassword}:SecretString:password}}'
+              - Name: N8N_BASIC_AUTH_ACTIVE
+                Value: 'false'
+              - Name: N8N_PROTOCOL
+                Value: https
+              - Name: N8N_SECURE_COOKIE
+                Value: 'true'
+              - Name: N8N_DIAGNOSTICS_ENABLED
+                Value: 'false'
+              - Name: N8N_PERSONALIZATION_ENABLED
+                Value: 'false'
+        AutoDeploymentsEnabled: false
+      InstanceConfiguration:
+        Cpu: !Ref AppRunnerCpu
+        Memory: !Ref AppRunnerMemory
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      NetworkConfiguration:
+        EgressConfiguration:
+          EgressType: VPC
+          VpcConnectorArn: !GetAtt VPCConnector.VpcConnectorArn
+      HealthCheckConfiguration:
+        Pro
