@@ -1,0 +1,456 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'n8n on single EC2 instance with Docker Compose, Caddy reverse proxy, and automated S3 backups'
+
+Parameters:
+  InstanceId:
+    Type: String
+    Description: Unique identifier for the n8n instance
+    AllowedPattern: '^[a-zA-Z0-9-]+$'
+    ConstraintDescription: Must contain only alphanumeric characters and hyphens
+
+  InstanceName:
+    Type: String
+    Description: Human-readable name for the instance
+    Default: n8n-instance
+
+  N8NVersion:
+    Type: String
+    Description: n8n Docker image version tag
+    Default: latest
+
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+
+  VolumeSize:
+    Type: Number
+    Description: EBS volume size in GB (GP3)
+    Default: 20
+    MinValue: 20
+    MaxValue: 200
+
+  DomainName:
+    Type: String
+    Description: Optional domain name for automatic HTTPS via Caddy. Leave empty for HTTP-only access via IP.
+    Default: ''
+
+  KeyPairName:
+    Type: String
+    Description: Optional EC2 key pair name for SSH access. Leave empty to disable SSH key access.
+    Default: ''
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+
+Resources:
+  # ============================================================================
+  # Networking
+  # ============================================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-igw'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-subnet'
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref RouteTable
+
+  # ============================================================================
+  # Security
+  # ============================================================================
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for n8n EC2 instance ${InstanceId}'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-sg'
+
+  # ============================================================================
+  # IAM
+  # ============================================================================
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'n8n-ec2-${InstanceId}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: N8NBackupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt BackupBucket.Arn
+                  - !Sub '${BackupBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: !GetAtt LogGroup.Arn
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub 'n8n-ec2-${InstanceId}-profile'
+      Roles:
+        - !Ref EC2Role
+
+  # ============================================================================
+  # Storage & Logging
+  # ============================================================================
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub 'n8n-backup-${InstanceId}-${AWS::AccountId}'
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+            ExpirationInDays: 90
+      Tags:
+        - Key: ManagedBy
+          Value: n8n-hosting-app
+        - Key: InstanceId
+          Value: !Ref InstanceId
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ec2/n8n/${InstanceId}'
+      RetentionInDays: 7
+
+  # ============================================================================
+  # Elastic IP
+  # ============================================================================
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}-eip'
+
+  EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref EC2Instance
+      AllocationId: !GetAtt ElasticIP.AllocationId
+
+  # ============================================================================
+  # EC2 Instance
+  # ============================================================================
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64}}'
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: !Ref VolumeSize
+            VolumeType: gp3
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'n8n-ec2-${InstanceId}'
+        - Key: ManagedBy
+          Value: n8n-hosting-app
+        - Key: InstanceId
+          Value: !Ref InstanceId
+      UserData:
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -xe
+            exec > >(tee /var/log/n8n-setup.log) 2>&1
+
+            echo "=== n8n EC2 Setup Starting ==="
+            echo "Instance ID: ${InstanceId}"
+            echo "n8n Version: ${N8NVersion}"
+            echo "Domain: ${DomainName}"
+
+            # Generate secrets
+            POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32)
+            N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
+
+            # === 1. Install Docker ===
+            dnf update -y
+            dnf install -y docker aws-cli
+            systemctl enable docker && systemctl start docker
+            usermod -aG docker ec2-user
+
+            # Install Docker Compose plugin
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            ARCH=$(uname -m)
+            curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${!ARCH}" \
+              -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            echo "Docker Compose version: $(docker compose version)"
+
+            # === 2. Install Caddy ===
+            dnf install -y 'dnf-command(copr)'
+            dnf copr enable -y @caddy/caddy epel-9-$(uname -m)
+            dnf install -y caddy
+
+            # Write Caddyfile
+            if [ -n "${DomainName}" ]; then
+              cat > /etc/caddy/Caddyfile << 'CADDYEOF'
+            ${DomainName} {
+              reverse_proxy localhost:5678
+            }
+            CADDYEOF
+            else
+              cat > /etc/caddy/Caddyfile << 'CADDYEOF'
+            :80 {
+              reverse_proxy localhost:5678
+            }
+            CADDYEOF
+            fi
+
+            systemctl enable caddy
+
+            # === 3. Create Docker Compose file ===
+            mkdir -p /opt/n8n
+
+            # Determine protocol and URL
+            if [ -n "${DomainName}" ]; then
+              N8N_PROTOCOL="https"
+              WEBHOOK_URL="https://${DomainName}/"
+            else
+              N8N_PROTOCOL="http"
+              WEBHOOK_URL="http://${ElasticIP}/"
+            fi
+
+            cat > /opt/n8n/docker-compose.yml << COMPOSEEOF
+            services:
+              n8n:
+                image: n8nio/n8n:${N8NVersion}
+                container_name: n8n-${InstanceId}
+                ports:
+                  - "5678:5678"
+                environment:
+                  - DB_TYPE=postgresdb
+                  - DB_POSTGRESDB_HOST=postgres
+                  - DB_POSTGRESDB_PORT=5432
+                  - DB_POSTGRESDB_DATABASE=n8n
+                  - DB_POSTGRESDB_USER=n8n
+                  - DB_POSTGRESDB_PASSWORD=${!POSTGRES_PASSWORD}
+                  - N8N_ENCRYPTION_KEY=${!N8N_ENCRYPTION_KEY}
+                  - N8N_HOST=0.0.0.0
+                  - N8N_PROTOCOL=${!N8N_PROTOCOL}
+                  - WEBHOOK_URL=${!WEBHOOK_URL}
+                  - GENERIC_TIMEZONE=UTC
+                  - N8N_DIAGNOSTICS_ENABLED=false
+                depends_on:
+                  postgres:
+                    condition: service_healthy
+                restart: unless-stopped
+                volumes:
+                  - n8n_data:/home/node/.n8n
+                healthcheck:
+                  test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 12
+                  start_period: 30s
+
+              postgres:
+                image: postgres:16-alpine
+                container_name: n8n-${InstanceId}-postgres
+                environment:
+                  - POSTGRES_DB=n8n
+                  - POSTGRES_USER=n8n
+                  - POSTGRES_PASSWORD=${!POSTGRES_PASSWORD}
+                volumes:
+                  - postgres_data:/var/lib/postgresql/data
+                healthcheck:
+                  test: ["CMD-SHELL", "pg_isready -U n8n"]
+                  interval: 5s
+                  timeout: 3s
+                  retries: 10
+                  start_period: 10s
+                restart: unless-stopped
+
+            volumes:
+              n8n_data:
+              postgres_data:
+            COMPOSEEOF
+
+            # === 4. Create systemd service ===
+            cat > /etc/systemd/system/n8n.service << 'SERVICEEOF'
+            [Unit]
+            Description=n8n Docker Compose Application
+            After=docker.service
+            Requires=docker.service
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            WorkingDirectory=/opt/n8n
+            ExecStart=/usr/bin/docker compose up -d --wait
+            ExecStop=/usr/bin/docker compose down
+            TimeoutStartSec=180
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICEEOF
+
+            systemctl daemon-reload
+            systemctl enable n8n
+            systemctl start n8n
+
+            # === 5. Setup daily backup cron ===
+            cat > /opt/n8n/backup.sh << 'BACKUPEOF'
+            #!/bin/bash
+            set -euo pipefail
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            BACKUP_FILE="/tmp/n8n_backup_${TIMESTAMP}.sql.gz"
+            docker compose -f /opt/n8n/docker-compose.yml exec -T postgres \
+              pg_dump -U n8n n8n | gzip > "$BACKUP_FILE"
+            aws s3 cp "$BACKUP_FILE" "s3://${BackupBucketName}/backups/${TIMESTAMP}.sql.gz"
+            rm -f "$BACKUP_FILE"
+            echo "Backup completed: ${TIMESTAMP}"
+            BACKUPEOF
+            chmod +x /opt/n8n/backup.sh
+
+            echo "0 3 * * * root /opt/n8n/backup.sh >> /var/log/n8n-backup.log 2>&1" > /etc/cron.d/n8n-backup
+            chmod 644 /etc/cron.d/n8n-backup
+
+            # === 6. Start Caddy (after Docker is up) ===
+            systemctl start caddy
+
+            echo "=== n8n EC2 Setup Complete ==="
+
+            # Signal CloudFormation
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+          - BackupBucketName: !Ref BackupBucket
+            ElasticIP: !Ref ElasticIP
+
+Outputs:
+  InstancePublicIP:
+    Description: Elastic IP address of the EC2 instance
+    Value: !Ref ElasticIP
+
+  N8NURL:
+    Description: URL to access n8n
+    Value: !If
+      - HasDomain
+      - !Sub 'https://${DomainName}'
+      - !Sub 'http://${ElasticIP}'
+
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+
+  BackupBucketName:
+    Description: S3 bucket for automated backups
+    Value: !Ref BackupBucket
+
+  SecurityGroupId:
+    Description: Security Group ID
+    Value: !Ref EC2SecurityGroup
+
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC

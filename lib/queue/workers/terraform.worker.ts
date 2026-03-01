@@ -2,9 +2,19 @@
 import { Worker, Job } from 'bullmq';
 import { connection } from '../client';
 import { TerraformExecutor } from '@/lib/terraform/executor';
+import { DockerProvisioner } from '@/lib/docker';
+import { EC2Provisioner } from '@/lib/ec2';
 import { updateInstanceStatus, prisma } from '@/lib/database';
 import { Prisma } from '@prisma/client';
 import { TerraformJobData, TerraformVariables } from '@/types/infrastructure';
+
+type ProvisioningMode = 'local-docker' | 'ec2-docker' | 'ecs-fargate';
+
+function getProvisioningMode(): ProvisioningMode {
+  if (process.env.USE_LOCAL_DOCKER === 'true') return 'local-docker';
+  if (process.env.USE_EC2_DOCKER === 'true') return 'ec2-docker';
+  return 'ecs-fargate';
+}
 
 export const terraformWorker = new Worker<TerraformJobData>(
   'terraform-jobs',
@@ -17,36 +27,78 @@ export const terraformWorker = new Worker<TerraformJobData>(
     });
     
     const { action, instanceId, variables } = job.data;
-    const executor = new TerraformExecutor(instanceId);
-    
+
+    const mode = getProvisioningMode();
+    console.log(`📍 Provisioning mode: ${mode}`);
+
     try {
-      switch (action) {
-        case 'create':
-          await handleCreate(job, executor, instanceId, variables);
+      switch (mode) {
+        case 'local-docker': {
+          const provisioner = new DockerProvisioner(instanceId);
+          switch (action) {
+            case 'create':
+              await handleDockerCreate(job, provisioner, instanceId);
+              break;
+            case 'destroy':
+              await handleDockerDestroy(provisioner, instanceId);
+              break;
+            case 'restart':
+              await handleDockerRestart(provisioner, instanceId);
+              break;
+            case 'update':
+              await handleUpdate(instanceId);
+              break;
+            case 'scale':
+              await handleScale(instanceId);
+              break;
+          }
           break;
-          
-        case 'destroy':
-          await handleDestroy(executor, instanceId);
+        }
+        case 'ec2-docker': {
+          const provisioner = new EC2Provisioner(instanceId);
+          switch (action) {
+            case 'create':
+              await handleEC2Create(job, provisioner, instanceId);
+              break;
+            case 'destroy':
+              await handleEC2Destroy(provisioner, instanceId);
+              break;
+            case 'restart':
+              await handleEC2Restart(instanceId);
+              break;
+            case 'update':
+              await handleUpdate(instanceId);
+              break;
+            case 'scale':
+              await handleScale(instanceId);
+              break;
+          }
           break;
-          
-        case 'update':
-          await handleUpdate(instanceId);
+        }
+        case 'ecs-fargate': {
+          const executor = new TerraformExecutor(instanceId);
+          switch (action) {
+            case 'create':
+              await handleCreate(job, executor, instanceId, variables);
+              break;
+            case 'destroy':
+              await handleDestroy(executor, instanceId);
+              break;
+            case 'update':
+              await handleUpdate(instanceId);
+              break;
+            case 'restart':
+              await handleRestart(executor, instanceId);
+              break;
+            case 'scale':
+              await handleScale(instanceId);
+              break;
+          }
           break;
-          
-        case 'restart':
-          await handleRestart(executor, instanceId);
-          break;
-          
-        case 'scale':
-          await handleScale(instanceId);
-          break;
-          
-        default:
-          const exhaustiveCheck: never = action;
-          throw new Error(`Unknown action: ${exhaustiveCheck}`);
+        }
       }
     } catch (error) {
-      console.error(`❌ Terraform job failed for ${instanceId}:`, error);
+      console.error(`❌ Job failed for ${instanceId}:`, error);
       await updateInstanceStatus(instanceId, 'FAILED');
       throw error;
     }
@@ -210,4 +262,247 @@ async function handleRestart(
 async function handleScale(instanceId: string): Promise<void> {
   await updateInstanceStatus(instanceId, 'UPDATING');
   console.log('⚠️  Scale not yet implemented for instance:', instanceId);
+}
+
+// ============================================================================
+// Local Docker Handlers
+// ============================================================================
+
+async function handleDockerCreate(
+  job: Job<TerraformJobData>,
+  provisioner: DockerProvisioner,
+  instanceId: string,
+): Promise<void> {
+  console.log(`🐳 [LOCAL DOCKER] Starting instance creation for ${instanceId}`);
+
+  const instance = await prisma.instance.findUnique({
+    where: { id: instanceId },
+  });
+
+  if (!instance) {
+    throw new Error(`Instance ${instanceId} not found`);
+  }
+
+  await job.updateProgress(10);
+  await updateInstanceStatus(instanceId, 'PROVISIONING');
+
+  console.log('🐳 [LOCAL DOCKER] Starting Docker containers...');
+  await job.updateProgress(30);
+  await updateInstanceStatus(instanceId, 'STARTING');
+
+  const { url, port } = await provisioner.create({
+    version: instance.config.version || 'latest',
+    size: instance.config.size || 'SMALL',
+  });
+
+  await job.updateProgress(80);
+  console.log(`🐳 [LOCAL DOCKER] Instance running at ${url}`);
+
+  const updateData: Prisma.InstanceUpdateInput = {
+    status: 'RUNNING',
+    access: {
+      set: {
+        url,
+        webhookUrl: `${url}/webhook`,
+        adminUsername: instance.access?.adminUsername || 'admin@example.com',
+        adminPasswordHash: instance.access?.adminPasswordHash || '',
+        apiKey: instance.access?.apiKey || '',
+        sshKeyName: null,
+      }
+    },
+    awsResources: {
+      set: {
+        ecsCluster: 'docker-local',
+        ecsService: `n8n-${instanceId}`,
+        ecsTaskArn: null,
+        albDnsName: `localhost:${port}`,
+        albArn: null,
+        targetGroupArn: null,
+        rdsEndpoint: 'docker-internal-postgres',
+        rdsInstanceId: null,
+        vpcId: 'docker-local',
+        subnetIds: [],
+        securityGroupId: null,
+        s3BucketName: null,
+      }
+    },
+    terraformOutputs: {
+      provider: 'local-docker',
+      port,
+      projectName: `n8n-${instanceId}`,
+    } as unknown as Prisma.JsonValue,
+    startedAt: new Date(),
+  };
+
+  await prisma.instance.update({
+    where: { id: instanceId },
+    data: updateData,
+  });
+
+  await job.updateProgress(100);
+  console.log(`🐳 [LOCAL DOCKER] Instance ${instanceId} provisioned at ${url}`);
+}
+
+async function handleDockerDestroy(
+  provisioner: DockerProvisioner,
+  instanceId: string,
+): Promise<void> {
+  console.log(`🐳 [LOCAL DOCKER] Destroying instance ${instanceId}`);
+  await updateInstanceStatus(instanceId, 'DESTROYING');
+
+  await provisioner.destroy();
+
+  await prisma.instance.update({
+    where: { id: instanceId },
+    data: {
+      status: 'STOPPED',
+      deletedAt: new Date(),
+    },
+  });
+  console.log(`🐳 [LOCAL DOCKER] Instance ${instanceId} destroyed`);
+}
+
+async function handleDockerRestart(
+  provisioner: DockerProvisioner,
+  instanceId: string,
+): Promise<void> {
+  console.log(`🐳 [LOCAL DOCKER] Restarting instance ${instanceId}`);
+  await updateInstanceStatus(instanceId, 'STARTING');
+
+  const { url } = await provisioner.restart();
+
+  const instance = await prisma.instance.findUnique({
+    where: { id: instanceId },
+  });
+
+  await prisma.instance.update({
+    where: { id: instanceId },
+    data: {
+      status: 'RUNNING',
+      access: {
+        set: {
+          url,
+          webhookUrl: `${url}/webhook`,
+          adminUsername: instance?.access?.adminUsername || 'admin@example.com',
+          adminPasswordHash: instance?.access?.adminPasswordHash || '',
+          apiKey: instance?.access?.apiKey || '',
+          sshKeyName: null,
+        }
+      },
+    },
+  });
+
+  console.log(`🐳 [LOCAL DOCKER] Instance ${instanceId} restarted at ${url}`);
+}
+
+// ============================================================================
+// EC2 Docker Handlers
+// ============================================================================
+
+async function handleEC2Create(
+  job: Job<TerraformJobData>,
+  provisioner: EC2Provisioner,
+  instanceId: string,
+): Promise<void> {
+  console.log(`☁️  [EC2 DOCKER] Starting instance creation for ${instanceId}`);
+
+  const instance = await prisma.instance.findUnique({
+    where: { id: instanceId },
+  });
+
+  if (!instance) {
+    throw new Error(`Instance ${instanceId} not found`);
+  }
+
+  await job.updateProgress(10);
+  await updateInstanceStatus(instanceId, 'PROVISIONING');
+
+  console.log('☁️  [EC2 DOCKER] Creating CloudFormation stack...');
+  await job.updateProgress(30);
+  await updateInstanceStatus(instanceId, 'STARTING');
+
+  const outputs = await Promise.race([
+    provisioner.create({
+      name: instance.name,
+      version: instance.config.version || 'latest',
+      size: instance.config.size || 'SMALL',
+      region: instance.config.region,
+      domainName: (instance.config.environment as Record<string, string> | undefined)?.DOMAIN_NAME,
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('EC2 provisioning timeout')), 900000)
+    ),
+  ]);
+
+  await job.updateProgress(80);
+  const instanceUrl = outputs.n8nUrl;
+  console.log(`☁️  [EC2 DOCKER] Instance running at ${instanceUrl}`);
+
+  const updateData: Prisma.InstanceUpdateInput = {
+    status: 'RUNNING',
+    access: {
+      set: {
+        url: instanceUrl,
+        webhookUrl: `${instanceUrl}/webhook`,
+        adminUsername: instance.access?.adminUsername || 'admin@example.com',
+        adminPasswordHash: instance.access?.adminPasswordHash || '',
+        apiKey: instance.access?.apiKey || '',
+        sshKeyName: instance.access?.sshKeyName || null,
+      },
+    },
+    awsResources: {
+      set: {
+        ecsCluster: null,
+        ecsService: null,
+        ecsTaskArn: outputs.ec2InstanceId,
+        albDnsName: outputs.instancePublicIP,
+        albArn: null,
+        targetGroupArn: null,
+        rdsEndpoint: 'docker-internal-postgres',
+        rdsInstanceId: null,
+        vpcId: outputs.vpcId || null,
+        subnetIds: [],
+        securityGroupId: outputs.securityGroupId || null,
+        s3BucketName: outputs.backupBucketName || null,
+      },
+    },
+    terraformOutputs: {
+      provider: 'ec2-docker',
+      stackName: `n8n-ec2-${instanceId}`,
+      ...outputs,
+    } as unknown as Prisma.JsonValue,
+    startedAt: new Date(),
+  };
+
+  await prisma.instance.update({
+    where: { id: instanceId },
+    data: updateData,
+  });
+
+  await job.updateProgress(100);
+  console.log(`☁️  [EC2 DOCKER] Instance ${instanceId} provisioned at ${instanceUrl}`);
+}
+
+async function handleEC2Destroy(
+  provisioner: EC2Provisioner,
+  instanceId: string,
+): Promise<void> {
+  console.log(`☁️  [EC2 DOCKER] Destroying instance ${instanceId}`);
+  await updateInstanceStatus(instanceId, 'DESTROYING');
+
+  await provisioner.destroy();
+
+  await prisma.instance.update({
+    where: { id: instanceId },
+    data: {
+      status: 'STOPPED',
+      deletedAt: new Date(),
+    },
+  });
+  console.log(`☁️  [EC2 DOCKER] Instance ${instanceId} destroyed`);
+}
+
+async function handleEC2Restart(instanceId: string): Promise<void> {
+  console.log(`☁️  [EC2 DOCKER] Restart not yet implemented for instance: ${instanceId}`);
+  await updateInstanceStatus(instanceId, 'RUNNING');
 }

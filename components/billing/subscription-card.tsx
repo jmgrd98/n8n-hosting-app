@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CreditCard, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/navigation';
 
 interface SubscriptionCardProps {
   subscription?: {
@@ -18,6 +20,7 @@ interface SubscriptionCardProps {
 }
 
 export function SubscriptionCard({ subscription, instanceCount }: SubscriptionCardProps) {
+  const t = useTranslations('subscription');
   const [loading, setLoading] = useState(false);
 
   const handleManageBilling = async () => {
@@ -41,19 +44,19 @@ export function SubscriptionCard({ subscription, instanceCount }: SubscriptionCa
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Free Plan</CardTitle>
+          <CardTitle>{t('freePlan')}</CardTitle>
           <CardDescription>
-            Upgrade to launch more instances and unlock premium features
+            {t('freeDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
-              <p className="text-sm text-muted-foreground">Instance limit</p>
+              <p className="text-sm text-muted-foreground">{t('instanceLimit')}</p>
               <p className="text-2xl font-bold">{instanceCount} / 1</p>
             </div>
             <Button className="w-full" asChild>
-              <a href="/pricing">Upgrade Plan</a>
+              <Link href="/pricing">{t('upgradePlan')}</Link>
             </Button>
           </div>
         </CardContent>
@@ -66,9 +69,9 @@ export function SubscriptionCard({ subscription, instanceCount }: SubscriptionCa
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>{subscription.plan} Plan</CardTitle>
+            <CardTitle>{t('plan', { plan: subscription.plan })}</CardTitle>
             <CardDescription>
-              Renews {format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy')}
+              {t('renews', { date: format(new Date(subscription.currentPeriodEnd), 'MMM d, yyyy') })}
             </CardDescription>
           </div>
           <Badge variant={subscription.status === 'ACTIVE' ? 'default' : 'secondary'}>
@@ -79,13 +82,13 @@ export function SubscriptionCard({ subscription, instanceCount }: SubscriptionCa
       <CardContent>
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-muted-foreground">Instance limit</p>
+            <p className="text-sm text-muted-foreground">{t('instanceLimit')}</p>
             <p className="text-2xl font-bold">
               {instanceCount} / {subscription.instanceLimit === -1 ? '∞' : subscription.instanceLimit}
             </p>
           </div>
-          <Button 
-            className="w-full" 
+          <Button
+            className="w-full"
             onClick={handleManageBilling}
             disabled={loading}
           >
@@ -94,7 +97,7 @@ export function SubscriptionCard({ subscription, instanceCount }: SubscriptionCa
             ) : (
               <CreditCard className="mr-2 h-4 w-4" />
             )}
-            Manage Billing
+            {t('manageBilling')}
           </Button>
         </div>
       </CardContent>
