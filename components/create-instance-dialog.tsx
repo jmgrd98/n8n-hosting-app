@@ -2,7 +2,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/navigation';
+import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
@@ -112,6 +113,8 @@ export function CreateInstanceDialog({
   onSuccess,
 }: CreateInstanceDialogProps) {
   const router = useRouter();
+  const t = useTranslations('createInstance');
+  const tc = useTranslations('common');
   const [step, setStep] = useState(1);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -124,7 +127,7 @@ export function CreateInstanceDialog({
   
   const handleCreate = async () => {
     if (!instanceName.trim()) {
-      setError('Please enter an instance name');
+      setError(t('pleaseEnterName'));
       return;
     }
     
@@ -174,15 +177,13 @@ export function CreateInstanceDialog({
   
   const selectedSizeDetails = INSTANCE_SIZES.find(s => s.id === selectedSize);
   const selectedRegionDetails = AWS_REGIONS.find(r => r.id === selectedRegion);
-  const selectedVersionDetails = N8N_VERSIONS.find(v => v.id === selectedVersion);
-  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New n8n Instance</DialogTitle>
+          <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>
-            Deploy a new n8n workflow automation instance in minutes
+            {t('description')}
           </DialogDescription>
         </DialogHeader>
         
@@ -218,21 +219,21 @@ export function CreateInstanceDialog({
         {step === 1 && (
           <div className="space-y-6">
             <div>
-              <Label htmlFor="name">Instance Name</Label>
+              <Label htmlFor="name">{t('instanceName')}</Label>
               <Input
                 id="name"
                 value={instanceName}
                 onChange={(e) => setInstanceName(e.target.value)}
-                placeholder="my-n8n-instance"
+                placeholder={t('instanceNamePlaceholder')}
                 className="mt-2"
               />
               <p className="text-sm text-gray-500 mt-1">
-                Choose a memorable name for your instance
+                {t('instanceNameHint')}
               </p>
             </div>
             
             <div>
-              <Label>Select Size</Label>
+              <Label>{t('selectSize')}</Label>
               <div className="grid grid-cols-2 gap-4 mt-2">
                 {INSTANCE_SIZES.map((size) => (
                   <Card
@@ -246,11 +247,11 @@ export function CreateInstanceDialog({
                   >
                     <CardHeader className="pb-3">
                       <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{size.name}</CardTitle>
+                        <CardTitle className="text-lg">{t(`sizes.${size.id}.name`)}</CardTitle>
                         <Badge variant="secondary">${size.price}/mo</Badge>
                       </div>
                       <CardDescription className="text-xs">
-                        {size.description}
+                        {t(`sizes.${size.id}.description`)}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2">
@@ -282,7 +283,7 @@ export function CreateInstanceDialog({
         {step === 2 && (
           <div className="space-y-6">
             <div>
-              <Label htmlFor="region">AWS Region</Label>
+              <Label htmlFor="region">{t('awsRegion')}</Label>
               <Select value={selectedRegion} onValueChange={setSelectedRegion}>
                 <SelectTrigger className="mt-2">
                   <SelectValue />
@@ -292,19 +293,19 @@ export function CreateInstanceDialog({
                     <SelectItem key={region.id} value={region.id}>
                       <span className="flex items-center gap-2">
                         <span>{region.flag}</span>
-                        <span>{region.name}</span>
+                        <span>{t(`regions.${region.id}`)}</span>
                       </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-sm text-gray-500 mt-1">
-                Choose a region closest to your users for best performance
+                {t('regionHint')}
               </p>
             </div>
             
             <div>
-              <Label htmlFor="version">n8n Version</Label>
+              <Label htmlFor="version">{t('n8nVersion')}</Label>
               <Select value={selectedVersion} onValueChange={setSelectedVersion}>
                 <SelectTrigger className="mt-2">
                   <SelectValue />
@@ -313,8 +314,8 @@ export function CreateInstanceDialog({
                   {N8N_VERSIONS.map((version) => (
                     <SelectItem key={version.id} value={version.id}>
                       <div>
-                        <div className="font-medium">{version.name}</div>
-                        <div className="text-xs text-gray-500">{version.description}</div>
+                        <div className="font-medium">{t(`versions.${version.id.replace(/\./g, '_')}.name`)}</div>
+                        <div className="text-xs text-gray-500">{t(`versions.${version.id.replace(/\./g, '_')}.description`)}</div>
                       </div>
                     </SelectItem>
                   ))}
@@ -325,8 +326,7 @@ export function CreateInstanceDialog({
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Your instance will be deployed with automatic backups, SSL certificates, 
-                and monitoring enabled by default.
+                {t('deployNote')}
               </AlertDescription>
             </Alert>
           </div>
@@ -337,29 +337,29 @@ export function CreateInstanceDialog({
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Review Your Configuration</CardTitle>
+                <CardTitle>{t('reviewConfig')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-600">Instance Name</span>
+                  <span className="text-gray-600">{t('instanceName')}</span>
                   <span className="font-medium">{instanceName}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-600">Size</span>
-                  <span className="font-medium">{selectedSizeDetails?.name}</span>
+                  <span className="text-gray-600">{t('selectSize')}</span>
+                  <span className="font-medium">{t(`sizes.${selectedSize}.name`)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-600">Region</span>
+                  <span className="text-gray-600">{t('awsRegion')}</span>
                   <span className="font-medium">
-                    {selectedRegionDetails?.flag} {selectedRegionDetails?.name}
+                    {selectedRegionDetails?.flag} {t(`regions.${selectedRegion}`)}
                   </span>
                 </div>
                 <div className="flex justify-between py-2 border-b">
-                  <span className="text-gray-600">n8n Version</span>
-                  <span className="font-medium">{selectedVersionDetails?.name}</span>
+                  <span className="text-gray-600">{t('n8nVersion')}</span>
+                  <span className="font-medium">{t(`versions.${selectedVersion.replace(/\./g, '_')}.name`)}</span>
                 </div>
                 <div className="flex justify-between py-2 pt-4">
-                  <span className="text-lg font-semibold">Monthly Cost</span>
+                  <span className="text-lg font-semibold">{t('monthlyCost')}</span>
                   <span className="text-lg font-bold text-orange-600">
                     ${selectedSizeDetails?.price}/month
                   </span>
@@ -370,8 +370,7 @@ export function CreateInstanceDialog({
             <Alert>
               <Zap className="h-4 w-4" />
               <AlertDescription>
-                Your instance will be ready in approximately 3-5 minutes. 
-                You&apos;ll receive an email when it&apos;s ready to use.
+                {t('readyNote')}
               </AlertDescription>
             </Alert>
           </div>
@@ -386,7 +385,7 @@ export function CreateInstanceDialog({
                   onClick={() => setStep(step - 1)}
                   disabled={creating}
                 >
-                  Previous
+                  {tc('previous')}
                 </Button>
               )}
             </div>
@@ -396,14 +395,14 @@ export function CreateInstanceDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={creating}
               >
-                Cancel
+                {tc('cancel')}
               </Button>
               {step < 3 ? (
                 <Button
                   onClick={() => setStep(step + 1)}
                   disabled={step === 1 && !instanceName.trim()}
                 >
-                  Next
+                  {tc('next')}
                 </Button>
               ) : (
                 <Button
@@ -414,12 +413,12 @@ export function CreateInstanceDialog({
                   {creating ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating Instance...
+                      {t('creatingInstance')}
                     </>
                   ) : (
                     <>
                       <Zap className="mr-2 h-4 w-4" />
-                      Create Instance
+                      {t('createInstance')}
                     </>
                   )}
                 </Button>

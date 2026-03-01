@@ -37,9 +37,17 @@ export class StateManager {
   
   constructor() {
     const region = process.env.AWS_REGION || 'us-east-1';
-    
-    this.s3Client = new S3Client({ region });
-    this.dynamoClient = new DynamoDBClient({ region });
+    const endpoint = process.env.AWS_ENDPOINT_URL;
+
+    const clientConfig: { region: string; endpoint?: string; forcePathStyle?: boolean } = { region };
+
+    if (endpoint) {
+      clientConfig.endpoint = endpoint;
+      clientConfig.forcePathStyle = true; // Required for LocalStack S3
+    }
+
+    this.s3Client = new S3Client(clientConfig);
+    this.dynamoClient = new DynamoDBClient(clientConfig);
   }
   
   
