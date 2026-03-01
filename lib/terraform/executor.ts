@@ -133,8 +133,9 @@ variable "tags" {
   private async generateMainTf(): Promise<void> {
     const accessKey = process.env.AWS_ACCESS_KEY_ID;
     const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
-    const s3Bucket = process.env.TERRAFORM_STATE_BUCKET; // Add this env var
-    
+    const s3Bucket = process.env.TERRAFORM_STATE_BUCKET;
+    const endpoint = process.env.AWS_ENDPOINT_URL;
+
     if (!accessKey || !secretKey) {
       throw new Error('AWS credentials not configured');
     }
@@ -142,23 +143,48 @@ variable "tags" {
     if (!s3Bucket) {
       throw new Error('TERRAFORM_STATE_BUCKET not configured');
     }
-    
+
+    // LocalStack-specific backend overrides
+    const backendOverrides = endpoint ? `
+      endpoints = {
+        s3       = "${endpoint}"
+        dynamodb = "${endpoint}"
+      }
+      force_path_style            = true
+      skip_credentials_validation = true
+      skip_metadata_api_check     = true
+      skip_requesting_account_id  = true` : '';
+
+    // LocalStack-specific provider overrides
+    const providerOverrides = endpoint ? `
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_requesting_account_id  = true
+
+    endpoints {
+      s3       = "${endpoint}"
+      dynamodb = "${endpoint}"
+      iam      = "${endpoint}"
+      sts      = "${endpoint}"
+    }` : '';
+
     const mainTf = `
   terraform {
     required_version = ">= 1.0"
-    
+
     required_providers {
       aws = {
         source  = "hashicorp/aws"
         version = "~> 5.0"
       }
     }
-    
+
     backend "s3" {
       bucket = "${s3Bucket}"
       key    = "instances/${this.instanceId}/terraform.tfstate"
       region = "${process.env.AWS_REGION || 'us-east-1'}"
       encrypt = true
+      ${backendOverrides}
     }
   }
 
@@ -166,26 +192,27 @@ variable "tags" {
     region = var.aws_region
     access_key = "${accessKey}"
     secret_key = "${secretKey}"
+    ${providerOverrides}
   }
 
   module "n8n_instance" {
     source = "./modules/n8n-instance"
-    
+
     instance_id    = var.instance_id
     instance_name  = var.instance_name
     instance_size  = var.instance_size
     n8n_version    = var.n8n_version
     aws_region     = var.aws_region
-    
+
     vpc_cidr       = var.vpc_cidr
     public_subnet_cidrs = var.public_subnet_cidrs
-    
+
     db_instance_class = var.db_instance_class
     db_storage_size   = var.db_storage_size
-    
+
     ecs_cpu        = var.ecs_cpu
     ecs_memory     = var.ecs_memory
-    
+
     tags = var.tags
   }
 
@@ -214,7 +241,7 @@ variable "tags" {
     description = "The VPC ID"
   }
   `;
-    
+
     await fs.writeFile(path.join(this.workspaceDir, 'main.tf'), mainTf);
 }
   

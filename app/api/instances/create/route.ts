@@ -26,15 +26,20 @@ export async function POST(request: NextRequest) {
       config
     });
     
-    // Check if we should use real provisioning
-    const useRealProvisioning = 
-      process.env.USE_MOCK_PROVISIONING !== 'true' && 
-      process.env.AWS_ACCESS_KEY_ID && 
+    // Check provisioning mode: Local Docker > EC2 Docker > ECS Fargate > Mock
+    const useLocalDocker = process.env.USE_LOCAL_DOCKER === 'true';
+    const useEC2Docker = process.env.USE_EC2_DOCKER === 'true';
+    const useRealProvisioning =
+      !useLocalDocker &&
+      !useEC2Docker &&
+      process.env.USE_MOCK_PROVISIONING !== 'true' &&
+      process.env.AWS_ACCESS_KEY_ID &&
       process.env.AWS_SECRET_ACCESS_KEY;
-    
-    console.log('Provisioning mode:', useRealProvisioning ? 'REAL AWS' : 'MOCK');
-    
-    if (useRealProvisioning) {
+
+    const mode = useLocalDocker ? 'LOCAL DOCKER' : useEC2Docker ? 'EC2 DOCKER' : useRealProvisioning ? 'ECS FARGATE' : 'MOCK';
+    console.log('Provisioning mode:', mode);
+
+    if (useLocalDocker || useEC2Docker || useRealProvisioning) {
       try {
         // Try to queue real Terraform job
         const job = await queueTerraformJob({

@@ -1,8 +1,8 @@
 // components/instance-card.tsx
 'use client';
 
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useRouter, Link } from '@/i18n/navigation';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +32,8 @@ interface InstanceCardProps {
 
 export function InstanceCard({ instance, onAction }: InstanceCardProps) {
   const router = useRouter();
+  const t = useTranslations('instanceCard');
+  const tc = useTranslations('common');
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -92,12 +94,12 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                       handleActionClick(e, 'stop');
                     }}>
                       <Pause className="w-4 h-4 mr-2" />
-                      Stop Instance
+                      {t('stopInstance')}
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <Link href={`/instances/${instance.id}`}>
                         <Settings className="w-4 h-4 mr-2" />
-                        Settings
+                        {tc('settings')}
                       </Link>
                     </DropdownMenuItem>
                   </>
@@ -108,7 +110,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                     handleActionClick(e, 'start');
                   }}>
                     <Play className="w-4 h-4 mr-2" />
-                    Start Instance
+                    {t('startInstance')}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -120,7 +122,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                   className="text-red-600"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Instance
+                  {t('deleteInstance')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -132,7 +134,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
           <div className="flex items-center gap-6 text-sm text-gray-600">
             <div className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
-              Created {new Date(instance.createdAt).toLocaleDateString()}
+              {t('created', { date: new Date(instance.createdAt).toLocaleDateString() })}
             </div>
             <div className="flex items-center gap-1">
               <DollarSign className="w-4 h-4" />
@@ -148,7 +150,7 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
             >
               <a href={instance.access.url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="w-4 h-4 mr-2" />
-                Open n8n
+                {t('openN8n')}
               </a>
             </Button>
           )}

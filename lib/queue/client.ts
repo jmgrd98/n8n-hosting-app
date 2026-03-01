@@ -2,7 +2,7 @@
 import { ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 
-export const connection: ConnectionOptions = {
+const redisConfig = {
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   password: process.env.REDIS_PASSWORD,
@@ -16,14 +16,32 @@ export const connection: ConnectionOptions = {
   }),
 };
 
-export const redis = new IORedis(connection);
+export const connection: ConnectionOptions = redisConfig;
 
-redis.on('error', (err) => {
-  console.error('Redis connection error:', err.message);
-});
+let _redis: IORedis | null = null;
 
-redis.on('connect', () => {
-  console.log('✅ Redis connected successfully');
+export function getRedis(): IORedis {
+  if (!_redis) {
+    _redis = new IORedis(redisConfig);
+
+    _redis.on('error', (err) => {
+      console.error('Redis connection error:', err.message);
+    });
+
+    _redis.on('connect', () => {
+      console.log('✅ Redis connected successfully');
+    });
+  }
+  return _redis;
+}
+
+// Lazy proxy so existing `import { redis }` still works without connecting at import time
+export const redis = new Proxy({} as IORedis, {
+  get(_, prop) {
+    const instance = getRedis();
+    const value = (instance as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
 });
 
 export const isQueueAvailable = true;

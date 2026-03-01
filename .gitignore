@@ -3,6 +3,7 @@
 /aws
 
 /.terraform/workspaces
+/.docker-instances
 
 # dependencies
 /node_modules
