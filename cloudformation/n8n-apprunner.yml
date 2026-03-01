@@ -149,6 +149,18 @@ Resources:
       RouteTableId: !Ref RouteTable
 
   # Security Groups
+  AppRunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for App Runner VPC Connector
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${InstanceName}-apprunner-sg'
+
   RDSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -158,7 +170,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
-          CidrIp: 0.0.0.0/0
+          SourceSecurityGroupId: !Ref AppRunnerSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub '${InstanceName}-rds-sg'
@@ -201,7 +213,7 @@ Resources:
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
       DBSubnetGroupName: !Ref DBSubnetGroup
-      PubliclyAccessible: true
+      PubliclyAccessible: false
       BackupRetentionPeriod: 7
       Tags:
         - Key: Name
@@ -216,7 +228,7 @@ Resources:
         - !Ref Subnet1
         - !Ref Subnet2
       SecurityGroups:
-        - !Ref RDSSecurityGroup
+        - !Ref AppRunnerSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub '${InstanceName}-vpc-connector'

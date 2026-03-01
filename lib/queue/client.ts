@@ -11,7 +11,7 @@ const redisConfig = {
   // Add TLS for production Redis (Upstash, Redis Cloud, etc.)
   ...(process.env.NODE_ENV === 'production' && {
     tls: {
-      rejectUnauthorized: false,
+      rejectUnauthorized: true,
     },
   }),
 };

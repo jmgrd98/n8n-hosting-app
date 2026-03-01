@@ -131,12 +131,10 @@ variable "tags" {
   }
   
   private async generateMainTf(): Promise<void> {
-    const accessKey = process.env.AWS_ACCESS_KEY_ID;
-    const secretKey = process.env.AWS_SECRET_ACCESS_KEY;
     const s3Bucket = process.env.TERRAFORM_STATE_BUCKET;
     const endpoint = process.env.AWS_ENDPOINT_URL;
 
-    if (!accessKey || !secretKey) {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
       throw new Error('AWS credentials not configured');
     }
 
@@ -190,8 +188,6 @@ variable "tags" {
 
   provider "aws" {
     region = var.aws_region
-    access_key = "${accessKey}"
-    secret_key = "${secretKey}"
     ${providerOverrides}
   }
 
