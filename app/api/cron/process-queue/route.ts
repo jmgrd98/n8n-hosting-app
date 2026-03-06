@@ -79,6 +79,9 @@ async function processJob(job: Job<TerraformJobData>): Promise<void> {
       case 'scale':
         await handleScale(instanceId);
         break;
+      case 'stop':
+        await handleDestroy(executor, instanceId);
+        break;
       default:
         // TypeScript ensures this is never reached
         const exhaustiveCheck: never = action;

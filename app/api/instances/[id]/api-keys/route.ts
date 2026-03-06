@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { prisma } from '@/lib/database';
+import { requireInstancePermission, Permission } from '@/lib/auth/permissions';
 
 export async function GET(
   request: NextRequest,
@@ -59,17 +60,18 @@ export async function POST(
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // FIXED: Removed deletedAt check
     const instance = await prisma.instance.findFirst({
-      where: {
-        id: instanceId,
-        userId: session.user.id,
-      },
+      where: { id: instanceId },
     });
 
     if (!instance) {
       return NextResponse.json({ error: 'Instance not found or access denied' }, { status: 404 });
     }
+
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, instanceId, instance.userId, Permission.MANAGE_API_KEYS
+    );
+    if (permDenied) return permDenied;
 
     const newApiKey = await prisma.apiKey.create({
       data: {

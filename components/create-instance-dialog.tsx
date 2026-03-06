@@ -150,6 +150,11 @@ export function CreateInstanceDialog({
       
       if (!response.ok) {
         const data = await response.json();
+        if (data.error === 'PAYMENT_METHOD_REQUIRED') {
+          setError(data.message);
+          setCreating(false);
+          return;
+        }
         throw new Error(data.error || 'Failed to create instance');
       }
       

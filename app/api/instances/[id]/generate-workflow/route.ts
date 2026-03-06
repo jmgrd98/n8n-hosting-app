@@ -99,24 +99,14 @@ Return format:
       workflow,
     });
   } catch (error: unknown) {
-    if (error instanceof Error) {
     console.error('Error generating workflow:', error);
-    if (error.name === 'SyntaxError') {
+    if (error instanceof SyntaxError) {
       return NextResponse.json(
         { error: 'Failed to parse AI response. Please try again.' },
         { status: 500 }
       );
     }
-
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate workflow' },
-      { status: 500 }
-    );
-  }
-    
-
-  
-    
-
+    const message = error instanceof Error ? error.message : 'Failed to generate workflow';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

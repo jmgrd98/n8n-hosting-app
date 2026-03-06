@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { NextIntlClientProvider, hasLocale } from 'next-intl';
 import { getMessages, getTranslations } from 'next-intl/server';
 import { AuthSessionProvider } from '@/lib/auth/session-provider';
+import { Providers } from '@/components/providers';
 import { Toaster } from '@/components/ui/sonner';
 import { locales } from '@/i18n/config';
 import '../globals.css';
@@ -43,8 +44,10 @@ export default async function LocaleLayout({
       <body className={inter.className}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <AuthSessionProvider>
-            {children}
-            <Toaster />
+            <Providers>
+              {children}
+              <Toaster />
+            </Providers>
           </AuthSessionProvider>
         </NextIntlClientProvider>
       </body>

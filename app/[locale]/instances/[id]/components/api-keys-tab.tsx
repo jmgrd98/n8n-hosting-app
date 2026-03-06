@@ -192,7 +192,7 @@ export function ApiKeysTab({ instanceId, instanceStatus }: ApiKeysTabProps) {
                   </Alert>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="key-name">{t('keyName')}</Label>
+                  <Label htmlFor="key-name" >{t('keyName')}</Label>
                   <Input
                     id="key-name"
                     placeholder={t('keyNamePlaceholder')}
@@ -270,9 +270,9 @@ export function ApiKeysTab({ instanceId, instanceStatus }: ApiKeysTabProps) {
                 key={apiKey.id}
                 className="border rounded-lg p-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-lg">{apiKey.name}</h3>
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-semibold text-lg truncate">{apiKey.name}</h3>
                     <div className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
                       <Calendar className="w-4 h-4" />
                       <span>{t('created', { date: new Date(apiKey.createdAt).toLocaleDateString() })}</span>
@@ -294,8 +294,8 @@ export function ApiKeysTab({ instanceId, instanceStatus }: ApiKeysTabProps) {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded px-3 py-2 font-mono text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex-1 min-w-0 bg-slate-100 dark:bg-slate-800 rounded px-3 py-2 font-mono text-sm break-all">
                     {visibleKeys.has(apiKey.id) ? apiKey.key : maskApiKey(apiKey.key)}
                   </div>
                   <Button

@@ -4,26 +4,49 @@ import { createInstanceRecord } from '@/lib/database';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { queueTerraformJob } from '@/lib/queue/jobs';
+import { SubscriptionManager } from '@/lib/stripe/subscription-manager';
+import { requireGlobalPermission, Permission } from '@/lib/auth/permissions';
+
+const subscriptionManager = new SubscriptionManager();
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user?.id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
-    const { config } = await request.json();
+
+    const { name, config } = await request.json();
     const userId = session.user.id;
+
+    const permDenied = await requireGlobalPermission(userId, session.user.role, Permission.CREATE_INSTANCE);
+    if (permDenied) return permDenied;
+
+    const hasPayment = await subscriptionManager.hasPaymentMethod(userId);
+    if (!hasPayment) {
+      return NextResponse.json(
+        { error: 'PAYMENT_METHOD_REQUIRED', message: 'A credit card is required before creating instances. Please add a payment method.' },
+        { status: 402 }
+      );
+    }
+
+    const canCreate = await subscriptionManager.canCreateInstance(userId);
+    if (!canCreate) {
+      return NextResponse.json(
+        { error: 'Instance limit reached for your current plan. Please upgrade to create more instances.' },
+        { status: 403 }
+      );
+    }
     
     // Create instance record
     const instance = await createInstanceRecord({
       userId,
       status: 'PROVISIONING',
-      config
+      config: { ...config, name }
     });
     
     // Check provisioning mode: Local Docker > EC2 Docker > ECS Fargate > Mock

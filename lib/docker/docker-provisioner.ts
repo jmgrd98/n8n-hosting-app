@@ -29,6 +29,7 @@ export class DockerProvisioner {
       instanceId: this.instanceId,
       n8nVersion: config.version === 'latest' ? 'latest' : config.version,
       projectName: this.projectName,
+      size: config.size,
     });
     await fs.writeFile(path.join(this.projectDir, 'docker-compose.yml'), composeYaml);
 

@@ -3,6 +3,8 @@ import { stripe } from '@/lib/stripe/stripe-server';
 import { SubscriptionManager } from '@/lib/stripe/subscription-manager';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
+import { email } from '@/lib/email';
+import { prisma } from '@/lib/database';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -56,7 +58,22 @@ export async function POST(request: NextRequest) {
       case 'invoice.payment_failed':
         const failedInvoice = event.data.object as Stripe.Invoice;
         console.log('Payment failed for invoice:', failedInvoice.id);
-        // Handle payment failure (e.g., send email, suspend instances)
+        if (failedInvoice.customer_email) {
+          const portalUrl = `${process.env.NEXTAUTH_URL}/billing`;
+          const plan = failedInvoice.lines?.data?.[0]?.description ?? 'your plan';
+          email.paymentFailed(failedInvoice.customer_email, plan, portalUrl).catch(() => {});
+        } else if (failedInvoice.customer) {
+          // Look up email from DB via stripeCustomerId
+          prisma.user.findFirst({
+            where: { stripeCustomerId: String(failedInvoice.customer) },
+            select: { email: true, subscription: true },
+          }).then(async (user) => {
+            if (!user?.email) return;
+            const portalUrl = `${process.env.NEXTAUTH_URL}/billing`;
+            const plan = user.subscription?.plan ?? 'your plan';
+            await email.paymentFailed(user.email, String(plan), portalUrl);
+          }).catch(() => {});
+        }
         break;
 
       default:

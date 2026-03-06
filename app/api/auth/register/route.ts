@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail } from '@/lib/database';
+import { email as emailService } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,6 +35,9 @@ export async function POST(request: NextRequest) {
       password: hashedPassword,
     });
     
+    // Send welcome email (fire-and-forget)
+    emailService.welcome(user.email, user.name || '').catch(() => {});
+
     return NextResponse.json({
       message: 'User created successfully',
       user: {

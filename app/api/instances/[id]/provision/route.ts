@@ -1,7 +1,7 @@
 // app/api/instances/[id]/provision/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { updateInstanceStatus, prisma } from '@/lib/database';
-
+import { email } from '@/lib/email';
 
 // This simulates the provisioning process
 export async function POST(
@@ -70,8 +70,22 @@ export async function POST(
     });
     
     console.log(`Mock provisioning completed for instance ${id}`);
-    
-    return NextResponse.json({ 
+
+    // Send "instance ready" email notification (fire-and-forget)
+    prisma.instance.findUnique({ where: { id } })
+      .then(async (inst) => {
+        if (!inst) return;
+        const user = await prisma.user.findUnique({
+          where: { id: inst.userId },
+          select: { email: true },
+        });
+        if (user?.email) {
+          await email.instanceReady(user.email, inst.name, mockUrl);
+        }
+      })
+      .catch(() => {});
+
+    return NextResponse.json({
       success: true,
       message: 'Instance provisioned successfully',
       url: mockUrl

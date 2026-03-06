@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { getInstanceById, deleteInstance } from '@/lib/database';
+import { requireInstancePermission, Permission } from '@/lib/auth/permissions';
 
 // GET /api/instances/[id] - Get instance details
 export async function GET(
@@ -33,8 +34,8 @@ export async function GET(
       );
     }
     
-    // Verify the instance belongs to the user
-    if (instance.userId !== session.user.id) {
+    // Verify the instance belongs to the user (or user is ADMIN)
+    if (instance.userId !== session.user.id && session.user.role !== 'ADMIN') {
       console.log('Instance does not belong to user:', instance.userId, '!==', session.user.id);
       return NextResponse.json(
         { error: 'Instance not found' },
@@ -69,16 +70,18 @@ export async function DELETE(
     
     const { id } = await params;
     
-    // Verify instance exists and belongs to user
+    // Verify instance exists
     const instance = await getInstanceById(id);
-    
-    if (!instance || instance.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Instance not found' },
-        { status: 404 }
-      );
+
+    if (!instance) {
+      return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }
-    
+
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, id, instance.userId, Permission.DELETE_INSTANCE
+    );
+    if (permDenied) return permDenied;
+
     // Delete the instance
     await deleteInstance(id);
     
