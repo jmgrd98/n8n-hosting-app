@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { Queue, Job } from 'bullmq';
 import { connection } from '@/lib/queue/client';
 import { TerraformJobData } from '@/types/infrastructure';
+import { getServerSession } from '@/lib/auth';
 
 interface ObliterateRequest {
   obliterate?: boolean;
@@ -16,9 +17,13 @@ interface JobSummary {
 
 export async function POST(request: Request) {
   try {
-    // Optional: Add authentication here
-    // const session = await getServerSession();
-    // if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const queue = new Queue<TerraformJobData>('terraform-jobs', { connection });
     
@@ -71,6 +76,14 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
+    const session = await getServerSession();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (session.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const queue = new Queue<TerraformJobData>('terraform-jobs', { connection });
     
     const counts = await queue.getJobCounts();

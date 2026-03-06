@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { prisma } from '@/lib/database';
+import { requireInstancePermission, Permission } from '@/lib/auth/permissions';
 
 // DELETE - Delete workflow from n8n instance
 export async function DELETE(
@@ -24,12 +25,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'API Key ID required' }, { status: 400 });
     }
 
-    // Get instance with API key (removed deletedAt check)
+    // Get instance with API key
     const instance = await prisma.instance.findFirst({
-      where: {
-        id: instanceId,
-        userId: session.user.id,
-      },
+      where: { id: instanceId },
       include: {
         apiKeys: {
           where: { id: apiKeyId },
@@ -40,6 +38,11 @@ export async function DELETE(
     if (!instance) {
       return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }
+
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, instanceId, instance.userId, Permission.DELETE_WORKFLOW
+    );
+    if (permDenied) return permDenied;
 
     if (instance.apiKeys.length === 0) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 });
@@ -79,13 +82,9 @@ export async function DELETE(
       message: 'Workflow deleted successfully',
     });
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      return NextResponse.json(
-      { error: error.message || 'Failed to delete workflow' },
-      { status: 500 }
-    );
-    }
-    
+    const message = error instanceof Error ? error.message : 'Failed to delete workflow';
+    console.error('Error deleting workflow:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -147,13 +146,8 @@ export async function GET(
 
     return NextResponse.json({ workflow });
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error('Error fetching workflow:', error);
-return NextResponse.json(
-      { error: error.message || 'Failed to fetch workflow' },
-      { status: 500 }
-    );
-    }
-    
+    const message = error instanceof Error ? error.message : 'Failed to fetch workflow';
+    console.error('Error fetching workflow:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

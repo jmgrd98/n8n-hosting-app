@@ -2,18 +2,29 @@ export interface DockerComposeConfig {
   instanceId: string;
   n8nVersion: string;
   projectName: string;
+  size?: string;
   n8nPort?: string;
   postgresPassword?: string;
   environment?: Record<string, string>;
 }
 
+const DOCKER_SIZE_LIMITS: Record<string, { cpus: string; memory: string }> = {
+  SMALL:  { cpus: '0.5', memory: '1024M' },
+  MEDIUM: { cpus: '1.0', memory: '2048M' },
+  LARGE:  { cpus: '2.0', memory: '4096M' },
+  XLARGE: { cpus: '4.0', memory: '8192M' },
+};
+
 export function generateComposeFile(config: DockerComposeConfig): string {
   const {
     n8nVersion,
+    size = 'SMALL',
     n8nPort = '0',
     postgresPassword = 'n8n_local',
     environment = {},
   } = config;
+
+  const limits = DOCKER_SIZE_LIMITS[size.toUpperCase()] || DOCKER_SIZE_LIMITS.SMALL;
 
   const extraEnvLines = Object.entries(environment)
     .map(([key, value]) => `      - ${key}=${value}`)
@@ -45,6 +56,11 @@ services:
     restart: unless-stopped
     volumes:
       - n8n_data:/home/node/.n8n
+    deploy:
+      resources:
+        limits:
+          cpus: '${limits.cpus}'
+          memory: ${limits.memory}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
       interval: 10s

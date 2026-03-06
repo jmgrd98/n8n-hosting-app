@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { prisma } from '@/lib/database';
 import { Workflow } from '@prisma/client';
+import { requireInstancePermission, Permission } from '@/lib/auth/permissions';
 
 // GET - List all workflows from n8n instance
 export async function GET(
@@ -26,12 +27,9 @@ export async function GET(
       return NextResponse.json({ error: 'API Key ID required in header' }, { status: 400 });
     }
 
-    // Get instance with API key (removed deletedAt check)
+    // Get instance with API key
     const instance = await prisma.instance.findFirst({
-      where: {
-        id: instanceId,
-        userId: session.user.id,
-      },
+      where: { id: instanceId },
       include: {
         apiKeys: {
           where: { id: apiKeyId },
@@ -42,6 +40,11 @@ export async function GET(
     if (!instance) {
       return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }
+
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, instanceId, instance.userId, Permission.VIEW_WORKFLOWS
+    );
+    if (permDenied) return permDenied;
 
     if (instance.apiKeys.length === 0) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 });
@@ -86,14 +89,9 @@ export async function GET(
 
     return NextResponse.json({ workflows });
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error('Error fetching workflows:', error.message);
-      return NextResponse.json(
-        { error: error.message || 'Failed to fetch workflows from n8n' },
-        { status: 500 }
-      );
-    }
-    
+    const message = error instanceof Error ? error.message : 'Failed to fetch workflows from n8n';
+    console.error('Error fetching workflows:', error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -133,12 +131,9 @@ export async function POST(
       );
     }
 
-    // Get instance with API key (removed deletedAt check)
+    // Get instance with API key
     const instance = await prisma.instance.findFirst({
-      where: {
-        id: instanceId,
-        userId: session.user.id,
-      },
+      where: { id: instanceId },
       include: {
         apiKeys: {
           where: { id: apiKeyId },
@@ -149,6 +144,11 @@ export async function POST(
     if (!instance) {
       return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }
+
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, instanceId, instance.userId, Permission.CREATE_WORKFLOW
+    );
+    if (permDenied) return permDenied;
 
     if (instance.apiKeys.length === 0) {
       return NextResponse.json({ error: 'API key not found' }, { status: 404 });
@@ -219,16 +219,12 @@ export async function POST(
       message: `Workflow "${createdWorkflow.name}" created successfully!`,
     });
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error('Error creating workflow in n8n:', error.message);
-      return NextResponse.json(
-      { 
-        error: error.message || 'Failed to create workflow in n8n',
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
-      },
+    const message = error instanceof Error ? error.message : 'Failed to create workflow in n8n';
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('Error creating workflow in n8n:', error);
+    return NextResponse.json(
+      { error: message, details: process.env.NODE_ENV === 'development' ? stack : undefined },
       { status: 500 }
     );
-    }
-    
   }
 }

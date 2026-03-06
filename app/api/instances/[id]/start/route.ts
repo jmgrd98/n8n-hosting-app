@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth/auth-options';
 import { getInstanceById, updateInstanceStatus } from '@/lib/database';
+import { requireInstancePermission, Permission } from '@/lib/auth/permissions';
 
 interface RouteParams {
   params: Promise<{
@@ -34,13 +35,11 @@ export async function POST(
       );
     }
     
-    if (instance.userId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Forbidden' },
-        { status: 403 }
-      );
-    }
-    
+    const permDenied = await requireInstancePermission(
+      session.user.id, session.user.role, id, instance.userId, Permission.START_STOP_INSTANCE
+    );
+    if (permDenied) return permDenied;
+
     if (instance.status !== 'STOPPED') {
       return NextResponse.json(
         { error: 'Instance must be stopped to start' },

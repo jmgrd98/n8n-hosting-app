@@ -18,10 +18,20 @@ export async function GET(request: NextRequest) {
     
     console.log('Fetching instances for user:', session.user.id);
     
-    // Query instances directly by userId (NOT using instanceIds array)
+    // Get instance IDs the user has been granted permissions on
+    const permissionGrants = await prisma.userInstancePermission.findMany({
+      where: { userId: session.user.id },
+      select: { instanceId: true },
+    });
+    const sharedInstanceIds = permissionGrants.map(g => g.instanceId);
+
+    // Query owned instances + instances shared via permissions
     const instances = await prisma.instance.findMany({
-      where: { 
-        userId: session.user.id,
+      where: {
+        OR: [
+          { userId: session.user.id },
+          { id: { in: sharedInstanceIds } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
     });

@@ -3,6 +3,7 @@ import { stripe } from './stripe-server';
 import { prisma } from '@/lib/database';
 import { SubscriptionStatus, PlanType as PrismaPlanType, PlanType } from '@prisma/client';
 import { CheckoutSessionConfig, LocalStateConfig, PriceIds, S3StateConfig } from '@/types/infrastructure';
+import { email as emailService } from '@/lib/email';
 
 export function isS3StateConfig(
   config: S3StateConfig | LocalStateConfig
@@ -123,6 +124,17 @@ export class SubscriptionManager {
         },
       },
     });
+
+    // Send subscription created email (fire-and-forget)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (user?.email) {
+      emailService
+        .subscriptionCreated(user.email, plan, INSTANCE_LIMITS[plan])
+        .catch(() => {});
+    }
   }
 
   async handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<void> {
@@ -198,6 +210,53 @@ export class SubscriptionManager {
         status: 'STOPPED',
       },
     });
+
+    // Send subscription cancelled email (fire-and-forget)
+    emailService
+      .subscriptionCancelled(user.email, existing.plan)
+      .catch(() => {});
+  }
+
+  async hasPaymentMethod(userId: string): Promise<boolean> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.stripeCustomerId) return false;
+
+    try {
+      const customer = await stripe.customers.retrieve(user.stripeCustomerId);
+      if ('deleted' in customer && customer.deleted) return false;
+
+      const defaultPm = customer.invoice_settings?.default_payment_method;
+      if (defaultPm) return true;
+
+      const methods = await stripe.paymentMethods.list({
+        customer: user.stripeCustomerId,
+        type: 'card',
+        limit: 1,
+      });
+      return methods.data.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async createSetupCheckoutSession(userId: string, successUrl: string, cancelUrl: string): Promise<Stripe.Checkout.Session> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error('User not found');
+
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const customer = await this.createCustomer(userId, user.email, user.name ?? undefined);
+      customerId = customer.id;
+    }
+
+    return await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'setup',
+      payment_method_types: ['card'],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: { userId },
+    });
   }
 
   async canCreateInstance(userId: string): Promise<boolean> {
@@ -207,10 +266,7 @@ export class SubscriptionManager {
     const instanceCount = await prisma.instance.count({
       where: {
         userId,
-        OR: [
-          { deletedAt: null },
-          { deletedAt: { equals: null } },
-        ],
+        deletedAt: null,
       },
     });
 
@@ -250,7 +306,7 @@ export class SubscriptionManager {
       incomplete_expired: 'INCOMPLETE_EXPIRED',
       trialing: 'TRIALING',
       unpaid: 'UNPAID',
-      paused: 'CANCELED', // treat pause as cancellation or whatever fallback
+      paused: 'PAST_DUE', // paused subscriptions are not active but not canceled
     };
     return statusMap[status] ?? 'CANCELED';
   }

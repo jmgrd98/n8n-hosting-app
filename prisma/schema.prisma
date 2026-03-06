@@ -16,22 +16,44 @@ model User {
   emailVerified     DateTime?
   image             String?
   role              UserRole  @default(USER)
-  stripeCustomerId  String?   
-  
+  stripeCustomerId  String?
+
+  // RBAC: global permissions granted by an admin
+  globalPermissions Permission[] @default([])
+
   // Relations (as references)
   instanceIds       String[]  @db.ObjectId
-  
+
   // NextAuth relations
   accounts          Account[]
   sessions          Session[]
-  
+
   // Embedded subscription data for faster queries
   subscription      Subscription?
-  
+
+  // User preferences
+  preferences       UserPreferences?
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
-  
+
   @@map("users")
+}
+
+model UserInstancePermission {
+  id          String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String       @db.ObjectId
+  instanceId  String       @db.ObjectId
+  permissions Permission[]
+  grantedById String       @db.ObjectId
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([userId, instanceId])
+  @@index([userId])
+  @@index([instanceId])
+  @@map("user_instance_permissions")
 }
 
 // NextAuth required models
@@ -250,6 +272,15 @@ model ActivityLog {
 
 // Embedded Documents (Types)
 
+type UserPreferences {
+  theme                String   @default("system")
+  language             String   @default("pt-BR")
+  emailNotifications   Boolean  @default(true)
+  marketingEmails      Boolean  @default(false)
+  defaultInstanceSize  String?
+  defaultRegion        String?
+}
+
 type Subscription {
   stripeSubscriptionId String
   stripePriceId        String
@@ -407,6 +438,20 @@ type BackupStorage {
 enum UserRole {
   USER
   ADMIN
+}
+
+enum Permission {
+  // Global permissions (managed per-user by admins)
+  CREATE_INSTANCE
+  VIEW_BILLING
+  MANAGE_BILLING
+  // Per-instance permissions (managed per (user, instance) by admins)
+  VIEW_WORKFLOWS
+  CREATE_WORKFLOW
+  DELETE_WORKFLOW
+  MANAGE_API_KEYS
+  START_STOP_INSTANCE
+  DELETE_INSTANCE
 }
 
 enum InstanceStatus {

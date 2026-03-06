@@ -93,6 +93,33 @@ export default function InstanceDetailsPage() {
     }
   }, [instanceId, router]);
 
+  const checkHealth = useCallback(async () => {
+    if (instance?.status !== 'RUNNING') return;
+
+    try {
+      const response = await fetch(`/api/instances/${instanceId}/health`);
+      if (response.ok) {
+        const data = await response.json();
+        setInstance(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            stats: {
+              ...prev.stats,
+              totalExecutions: prev.stats?.totalExecutions ?? 0,
+              totalWorkflows: prev.stats?.totalWorkflows ?? 0,
+              totalUptime: prev.stats?.totalUptime ?? 0,
+              healthStatus: data.healthStatus,
+              lastHealthCheck: data.lastHealthCheck,
+            },
+          };
+        });
+      }
+    } catch (error) {
+      console.error('Error checking health:', error);
+    }
+  }, [instanceId, instance?.status]);
+
   useEffect(() => {
     if (sessionStatus === 'loading') return;
 
@@ -114,6 +141,16 @@ export default function InstanceDetailsPage() {
       return () => clearInterval(interval);
     }
   }, [session, sessionStatus, instanceId, instance?.status, fetchInstance, router]);
+
+  // Health check polling for running instances
+  useEffect(() => {
+    if (instance?.status !== 'RUNNING') return;
+
+    checkHealth();
+
+    const healthInterval = setInterval(checkHealth, 60000);
+    return () => clearInterval(healthInterval);
+  }, [instance?.status, checkHealth]);
 
   const handleAction = async (action: 'start' | 'stop' | 'restart' | 'delete') => {
     setActionLoading(action);
@@ -221,9 +258,9 @@ export default function InstanceDetailsPage() {
             <div>
               <h1 className="text-3xl font-bold mb-2">{instance.name}</h1>
               <div className="flex items-center gap-4">
-                <Badge variant="outline" className="capitalize">
+                <Badge variant="outline">
                   <span className={`w-2 h-2 rounded-full ${getStatusColor(instance.status)} mr-2`} />
-                  {instance.status.toLowerCase()}
+                  {t(`statuses.${instance.status}` as Parameters<typeof t>[0])}
                 </Badge>
                 <span className="text-sm text-gray-600">
                   ID: {instance.id}

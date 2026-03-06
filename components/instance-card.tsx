@@ -4,7 +4,6 @@
 import { useRouter, Link } from '@/i18n/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -30,31 +29,40 @@ interface InstanceCardProps {
   onAction: (instanceId: string, action: 'start' | 'stop' | 'delete') => Promise<void>;
 }
 
+const statusConfig: Record<string, { color: string; dotColor: string; glow: string }> = {
+  RUNNING: {
+    color: 'text-emerald-600 dark:text-emerald-400',
+    dotColor: 'bg-emerald-500',
+    glow: 'shadow-[0_0_8px_oklch(0.65_0.2_145/0.3)]',
+  },
+  STOPPED: {
+    color: 'text-muted-foreground',
+    dotColor: 'bg-slate-400 dark:bg-slate-500',
+    glow: '',
+  },
+  PROVISIONING: {
+    color: 'text-blue-600 dark:text-blue-400',
+    dotColor: 'bg-blue-500',
+    glow: 'shadow-[0_0_8px_oklch(0.60_0.2_250/0.3)]',
+  },
+  FAILED: {
+    color: 'text-red-600 dark:text-red-400',
+    dotColor: 'bg-red-500',
+    glow: 'shadow-[0_0_8px_oklch(0.60_0.22_25/0.3)]',
+  },
+  DESTROYING: {
+    color: 'text-amber-600 dark:text-amber-400',
+    dotColor: 'bg-amber-500',
+    glow: 'shadow-[0_0_8px_oklch(0.70_0.18_75/0.3)]',
+  },
+};
+
 export function InstanceCard({ instance, onAction }: InstanceCardProps) {
   const router = useRouter();
   const t = useTranslations('instanceCard');
   const tc = useTranslations('common');
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'RUNNING': return 'bg-green-500';
-      case 'STOPPED': return 'bg-gray-500';
-      case 'PROVISIONING': return 'bg-blue-500';
-      case 'FAILED': return 'bg-red-500';
-      case 'DESTROYING': return 'bg-orange-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const color = getStatusColor(status);
-    return (
-      <Badge variant="outline" className="capitalize">
-        <span className={`w-2 h-2 rounded-full ${color} mr-2`} />
-        {status.toLowerCase()}
-      </Badge>
-    );
-  };
+  const status = statusConfig[instance.status] || statusConfig.STOPPED;
 
   const handleCardClick = () => {
     router.push(`/instances/${instance.id}`);
@@ -66,39 +74,47 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
   };
 
   return (
-    <Card 
-      className="cursor-pointer transition-all hover:shadow-md hover:border-gray-400"
+    <div
+      className="glass-card rounded-2xl cursor-pointer group"
       onClick={handleCardClick}
     >
-      <CardHeader>
+      <div className="p-5">
         <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="text-lg">{instance.name}</CardTitle>
-            <CardDescription className="mt-1">
-              {instance.config.size} • {instance.config.region} • v{instance.config.version}
-            </CardDescription>
+          <div className="space-y-1 min-w-0">
+            <h3 className="text-base font-semibold truncate group-hover:text-primary transition-colors">
+              {instance.name}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {instance.config.size} &middot; {instance.config.region} &middot; v{instance.config.version}
+            </p>
           </div>
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {getStatusBadge(instance.status)}
+          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {/* Status badge */}
+            <Badge variant="outline" className={`capitalize gap-2 border-border/50 ${status.color}`}>
+              <span className={`w-2 h-2 rounded-full ${status.dotColor} ${status.glow} ${instance.status === 'RUNNING' || instance.status === 'PROVISIONING' ? 'animate-pulse' : ''}`} />
+              {instance.status.toLowerCase()}
+            </Badge>
+
+            {/* Actions menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="w-8 h-8 p-0 hover:bg-accent/50">
                   <MoreVertical className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="glass-card w-48">
                 {instance.status === 'RUNNING' && (
                   <>
                     <DropdownMenuItem onClick={(e) => {
                       e.stopPropagation();
                       handleActionClick(e, 'stop');
-                    }}>
-                      <Pause className="w-4 h-4 mr-2" />
+                    }} className="gap-2">
+                      <Pause className="w-4 h-4" />
                       {t('stopInstance')}
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href={`/instances/${instance.id}`}>
-                        <Settings className="w-4 h-4 mr-2" />
+                      <Link href={`/instances/${instance.id}`} className="gap-2">
+                        <Settings className="w-4 h-4" />
                         {tc('settings')}
                       </Link>
                     </DropdownMenuItem>
@@ -108,54 +124,55 @@ export function InstanceCard({ instance, onAction }: InstanceCardProps) {
                   <DropdownMenuItem onClick={(e) => {
                     e.stopPropagation();
                     handleActionClick(e, 'start');
-                  }}>
-                    <Play className="w-4 h-4 mr-2" />
+                  }} className="gap-2">
+                    <Play className="w-4 h-4" />
                     {t('startInstance')}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
                     handleActionClick(e, 'delete');
                   }}
-                  className="text-red-600"
+                  className="gap-2 text-destructive focus:text-destructive"
                 >
-                  <Trash2 className="w-4 h-4 mr-2" />
+                  <Trash2 className="w-4 h-4" />
                   {t('deleteInstance')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <div className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
+
+        {/* Bottom row */}
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-border/30">
+          <div className="flex items-center gap-5 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" />
               {t('created', { date: new Date(instance.createdAt).toLocaleDateString() })}
             </div>
-            <div className="flex items-center gap-1">
-              <DollarSign className="w-4 h-4" />
-              ${instance.billing?.monthlyCharge || 0}/month
+            <div className="flex items-center gap-1.5">
+              <DollarSign className="w-3.5 h-3.5" />
+              ${instance.billing?.monthlyCharge || 0}/mo
             </div>
           </div>
           {instance.status === 'RUNNING' && instance.access?.url && (
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               asChild
               onClick={(e) => e.stopPropagation()}
+              className="glass-card border-border/50 hover:border-primary/30 h-8 text-xs"
             >
               <a href={instance.access.url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="w-4 h-4 mr-2" />
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
                 {t('openN8n')}
               </a>
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

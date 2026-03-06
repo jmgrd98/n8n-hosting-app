@@ -7,6 +7,7 @@ import { EC2Provisioner } from '@/lib/ec2';
 import { updateInstanceStatus, prisma } from '@/lib/database';
 import { Prisma } from '@prisma/client';
 import { TerraformJobData, TerraformVariables } from '@/types/infrastructure';
+import { email } from '@/lib/email';
 
 type ProvisioningMode = 'local-docker' | 'ec2-docker' | 'ecs-fargate';
 
@@ -55,7 +56,8 @@ export const terraformWorker = new Worker<TerraformJobData>(
           break;
         }
         case 'ec2-docker': {
-          const provisioner = new EC2Provisioner(instanceId);
+          const ec2Region = variables?.region;
+          const provisioner = new EC2Provisioner(instanceId, ec2Region);
           switch (action) {
             case 'create':
               await handleEC2Create(job, provisioner, instanceId);
@@ -100,6 +102,12 @@ export const terraformWorker = new Worker<TerraformJobData>(
     } catch (error) {
       console.error(`❌ Job failed for ${instanceId}:`, error);
       await updateInstanceStatus(instanceId, 'FAILED');
+
+      // Send instance failed email notification
+      notifyInstanceOwner(instanceId, (userEmail, instanceName) =>
+        email.instanceFailed(userEmail, instanceName)
+      ).catch(() => {});
+
       throw error;
     }
   },
@@ -243,6 +251,11 @@ async function handleDestroy(
       deletedAt: new Date(),
     },
   });
+
+  notifyInstanceOwner(instanceId, (userEmail, instanceName) =>
+    email.instanceDeleted(userEmail, instanceName)
+  ).catch(() => {});
+
   console.log(`✅ Instance ${instanceId} destroyed`);
 }
 
@@ -359,6 +372,10 @@ async function handleDockerDestroy(
       deletedAt: new Date(),
     },
   });
+  notifyInstanceOwner(instanceId, (userEmail, instanceName) =>
+    email.instanceDeleted(userEmail, instanceName)
+  ).catch(() => {});
+
   console.log(`🐳 [LOCAL DOCKER] Instance ${instanceId} destroyed`);
 }
 
@@ -499,10 +516,37 @@ async function handleEC2Destroy(
       deletedAt: new Date(),
     },
   });
+  notifyInstanceOwner(instanceId, (userEmail, instanceName) =>
+    email.instanceDeleted(userEmail, instanceName)
+  ).catch(() => {});
+
   console.log(`☁️  [EC2 DOCKER] Instance ${instanceId} destroyed`);
 }
 
 async function handleEC2Restart(instanceId: string): Promise<void> {
   console.log(`☁️  [EC2 DOCKER] Restart not yet implemented for instance: ${instanceId}`);
   await updateInstanceStatus(instanceId, 'RUNNING');
+}
+
+// ============================================================================
+// Email notification helper
+// ============================================================================
+
+async function notifyInstanceOwner(
+  instanceId: string,
+  sendFn: (userEmail: string, instanceName: string) => Promise<void>
+): Promise<void> {
+  const instance = await prisma.instance.findUnique({
+    where: { id: instanceId },
+    select: { name: true, userId: true },
+  });
+  if (!instance) return;
+
+  const user = await prisma.user.findUnique({
+    where: { id: instance.userId },
+    select: { email: true },
+  });
+  if (!user?.email) return;
+
+  await sendFn(user.email, instance.name);
 }

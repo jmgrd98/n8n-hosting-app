@@ -37,6 +37,7 @@ export function OverviewTab({
   getHealthColor 
 }: OverviewTabProps) {
   const t = useTranslations('instance.overview');
+  const ti = useTranslations('instance');
   const [liveStats, setLiveStats] = useState<{
     workflowCount: number;
     executionCount: number;
@@ -142,10 +143,17 @@ export function OverviewTab({
           <CardContent>
             <div className="flex items-center gap-2">
               <Activity className={`w-4 h-4 ${getHealthColor(instance.stats?.healthStatus)}`} />
-              <span className="text-2xl font-bold capitalize">
-                {instance.stats?.healthStatus || t('unknown')}
+              <span className="text-2xl font-bold">
+                {instance.stats?.healthStatus
+                  ? ti(`healthStatuses.${instance.stats.healthStatus}` as Parameters<typeof ti>[0])
+                  : ti('healthStatuses.unknown')}
               </span>
             </div>
+            {instance.stats?.lastHealthCheck && (
+              <p className="text-xs text-gray-500 mt-1">
+                {t('lastChecked', { time: new Date(instance.stats.lastHealthCheck).toLocaleTimeString() })}
+              </p>
+            )}
           </CardContent>
         </Card>
 

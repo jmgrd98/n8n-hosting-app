@@ -54,7 +54,7 @@ export interface SizeConfig {
 // ============================================================================
 
 export interface TerraformJobData {
-  action: 'create' | 'update' | 'destroy' | 'restart' | 'scale';
+  action: 'create' | 'update' | 'destroy' | 'restart' | 'scale' | 'stop';
   instanceId: string;
   variables: Partial<TerraformVariables>;
   userId?: string;

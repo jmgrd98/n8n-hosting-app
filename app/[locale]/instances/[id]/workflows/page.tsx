@@ -41,6 +41,12 @@ import type {
   WorkflowListItem,
   Instance,
 } from '@/types/n8n';
+import {
+  WORKFLOW_TEMPLATES,
+  CATEGORY_COLORS,
+  TEMPLATE_CATEGORIES,
+  type TemplateCategory,
+} from '@/lib/workflow-templates';
 
 export default function AIWorkflowGeneratorPage() {
   const params = useParams();
@@ -63,14 +69,15 @@ export default function AIWorkflowGeneratorPage() {
   const [success, setSuccess] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [instance, setInstance] = useState<Instance | null>(null);
+  const [templateCategory, setTemplateCategory] = useState<TemplateCategory | 'All'>('All');
 
   // Example prompts
   const examplePrompts: string[] = [
-    "Create a workflow that sends me a daily email summary of my GitHub notifications",
-    "Monitor a website for changes and send a Slack notification when content updates",
-    "Automatically save Gmail attachments to Google Drive and notify me on Telegram",
-    "Send a weekly report of new leads from my website to my team on Slack",
-    "Create a task in Asana whenever someone fills out my contact form",
+    t('examplePrompt1'),
+    t('examplePrompt2'),
+    t('examplePrompt3'),
+    t('examplePrompt4'),
+    t('examplePrompt5'),
   ];
 
   const fetchApiKeys = useCallback(async (): Promise<void> => {
@@ -355,6 +362,78 @@ export default function AIWorkflowGeneratorPage() {
               </Alert>
             )}
 
+            {/* Templates Section */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold">Workflow Templates</h2>
+                  <p className="text-sm text-gray-600">Deploy a pre-built workflow to your instance in one click.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={templateCategory === 'All' ? 'default' : 'outline'}
+                    onClick={() => setTemplateCategory('All')}
+                  >
+                    All
+                  </Button>
+                  {TEMPLATE_CATEGORIES.map((cat) => (
+                    <Button
+                      key={cat}
+                      size="sm"
+                      variant={templateCategory === cat ? 'default' : 'outline'}
+                      onClick={() => setTemplateCategory(cat)}
+                    >
+                      {cat}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {WORKFLOW_TEMPLATES
+                  .filter(tpl => templateCategory === 'All' || tpl.category === templateCategory)
+                  .map((tpl) => (
+                    <Card key={tpl.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <CardTitle className="text-base leading-tight">{tpl.name}</CardTitle>
+                          <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${CATEGORY_COLORS[tpl.category]}`}>
+                            {tpl.category}
+                          </span>
+                        </div>
+                        <CardDescription className="text-xs">{tpl.description}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          disabled={!selectedApiKeyId}
+                          onClick={() => {
+                            setGeneratedWorkflow({
+                              name: tpl.name,
+                              description: tpl.description,
+                              nodes: tpl.nodes,
+                              connections: tpl.connections,
+                              settings: tpl.settings,
+                            } as GeneratedWorkflow);
+                            setSuccess('');
+                            setError('');
+                            setTimeout(() => {
+                              document.getElementById('generated-workflow-preview')?.scrollIntoView({ behavior: 'smooth' });
+                            }, 100);
+                          }}
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Use Template
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            </div>
+
             {/* Generator Card */}
             <Card className="mb-8">
               <CardHeader>
@@ -440,7 +519,7 @@ export default function AIWorkflowGeneratorPage() {
 
             {/* Generated Workflow Preview */}
             {generatedWorkflow && (
-              <Card className="mb-8 border-purple-200">
+              <Card id="generated-workflow-preview" className="mb-8 border-purple-200">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
